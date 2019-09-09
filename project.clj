@@ -4,6 +4,7 @@
   :license {:name "The MIT License"
             :url "http://opensource.org/licenses/MIT"}
   :dependencies [[org.clojure/clojure "1.10.1"]
+                 [org.clojure/tools.logging "0.5.0"]
                  [juxt/crux-core "derived-from-git"]
                  [com.sixthnormal/clj-3df "0.1.0-alpha"]]
   :profiles {:dev {:dependencies [[ch.qos.logback/logback-classic "1.2.3"]]}}
