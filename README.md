@@ -1,6 +1,6 @@
 # Crux Dataflow Spike
 
-*ALPHA*
+*SPIKE / pre-ALPHA*
 
 Integrates Crux with https://github.com/sixthnormal/clj-3df and
 https://github.com/comnik/declarative-dataflow

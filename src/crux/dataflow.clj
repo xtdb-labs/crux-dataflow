@@ -52,7 +52,7 @@
              (fn [acc [op-key doc-or-id]]
                (case op-key
                  :crux.tx/put (let [new-doc doc-or-id
-                                    _ (log/info "NEW-DOC:" new-doc)
+                                    _ (log/debug "NEW-DOC:" new-doc)
                                     eid (:crux.db/id new-doc)
                                     old-doc (some->> (api/history-descending crux-db snapshot (:crux.db/id new-doc))
                                                      ;; NOTE: This comment seems like a potential bug?
@@ -73,7 +73,7 @@
                                           new-val (get new-doc k)
                                           old-set (when old-val (if (coll? old-val) (set old-val) #{old-val}))
                                           new-set (when new-val (if (coll? new-val) (set new-val) #{new-val}))]
-                                      (log/info "KEY:" k old-set new-set)
+                                      (log/debug "KEY:" k old-set new-set)
                                       (concat
                                        (for [new new-set
                                              :when new
@@ -85,7 +85,7 @@
                                          [:db/retract eid k old])))))))))
              []
              tx-ops)]
-        (log/info "3DF Tx:" new-transaction)
+        (log/debug "3DF Tx:" new-transaction)
         @(df/exec! conn (df/transact db new-transaction))))))
 
 (defrecord CruxDataflowTxListener [conn db crux ^Thread worker-thread]
