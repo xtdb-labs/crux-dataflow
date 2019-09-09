@@ -15,3 +15,8 @@ cd server
 cargo build
 cargo run
 ```
+
+There's a version of this binary living at
+`resources/declarative-server-v0.2.0-x86_64-unknown-linux-gnu` as
+well. Note that the server really has v0.1.0, but the
+declarative-dataflow version is v0.2.0.
