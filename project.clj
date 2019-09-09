@@ -5,7 +5,6 @@
             :url "http://opensource.org/licenses/MIT"}
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [juxt/crux-core "derived-from-git"]
-                 [ch.qos.logback/logback-classic "1.2.3"]
                  [com.sixthnormal/clj-3df "0.1.0-alpha"]]
   :profiles {:dev {:dependencies [[ch.qos.logback/logback-classic "1.2.3"]]}}
   :middleware [leiningen.project-version/middleware]
