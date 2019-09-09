@@ -21,70 +21,77 @@
      to (.array (doto (ByteBuffer/allocate Long/BYTES)
                   (.putLong this))))))
 
-(defn- validate-schema!
-  [crux schema tx-ops]
-  (doseq [[tx-op {:keys [crux.db/id] :as doc}] tx-ops]
-    (case tx-op
-      :crux.tx/put (do (assert (instance? Long id))
-                       (assert (map? doc))
-                       (doseq [[k v] (dissoc doc :crux.db/id)
-                               :let [{:keys [db/valueType input_semantics]} (get schema k)]]
-                         (assert (contains? schema k))
-                         (case input_semantics
-                           "CardinalityMany"
-                           (case valueType
-                             (:Eid :Number) (do (assert (coll? v))
-                                                (doseq [i v]
-                                                  (assert (number? i))))
-                             :String (do (assert (coll? v))
-                                         (doseq [i v]
-                                           (assert (string? i)))))
+(defn- validate-schema! [schema {:keys [crux.db/id] :as doc}]
+  (assert (instance? Long id))
+  (assert (map? doc))
+  (doseq [[k v] (dissoc doc :crux.db/id)
+          :let [{:keys [db/valueType input_semantics]} (get schema k)]]
+    (assert (contains? schema k))
+    (case input_semantics
+      "CardinalityMany"
+      (case valueType
+        (:Eid :Number) (do (assert (coll? v))
+                           (doseq [i v]
+                             (assert (number? i))))
+        :String (do (assert (coll? v))
+                    (doseq [i v]
+                      (assert (string? i)))))
 
-                           "CardinalityOne"
-                           (case valueType
-                             (:Eid :Number) (assert (number? v))
-                             :String (assert (string? v)))))))))
+      "CardinalityOne"
+      (case valueType
+        (:Eid :Number) (assert (number? v))
+        :String (assert (string? v))))))
+
+(defn- matches-schema? [schema doc]
+  (try
+    (validate-schema! schema doc)
+    true
+    (catch AssertionError _
+      false)))
 
 (defn- index-to-3df
-  [conn db crux {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
+  [conn db crux schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
   (let [crux-db (api/db crux)]
     (with-open [snapshot (api/new-snapshot crux-db)]
       (let [new-transaction
             (reduce
              (fn [acc [op-key doc-or-id]]
                (case op-key
-                 :crux.tx/put (let [new-doc doc-or-id
-                                    _ (log/debug "NEW-DOC:" new-doc)
-                                    eid (:crux.db/id new-doc)
-                                    old-doc (some->> (api/history-descending crux-db snapshot (:crux.db/id new-doc))
-                                                     ;; NOTE: This comment seems like a potential bug?
-                                                     ;; history-descending inconsistently includes the current document
-                                                     ;; sometimes (on first transaction attleast
-                                                     (filter
-                                                      (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
-                                                     first :crux.db/doc)]
-                                (into
-                                 acc
-                                 (apply
-                                  concat
-                                  (for [k (set (concat
-                                                (keys new-doc)
-                                                (keys old-doc)))
-                                        :when (not= k :crux.db/id)]
-                                    (let [old-val (get old-doc k)
-                                          new-val (get new-doc k)
-                                          old-set (when old-val (if (coll? old-val) (set old-val) #{old-val}))
-                                          new-set (when new-val (if (coll? new-val) (set new-val) #{new-val}))]
-                                      (log/debug "KEY:" k old-set new-set)
-                                      (concat
-                                       (for [new new-set
-                                             :when new
-                                             :when (or (nil? old-set) (not (old-set new)))]
-                                         [:db/add eid k new])
-                                       (for [old old-set
-                                             :when old
-                                             :when (or (nil? new-set) (not (new-set old)))]
-                                         [:db/retract eid k old])))))))))
+                 :crux.tx/put (if-not (matches-schema? schema doc-or-id)
+                                (do (log/debug "SKIPPING-DOC:" doc-or-id)
+                                    acc)
+                                (let [new-doc doc-or-id
+                                      _ (log/debug "NEW-DOC:" new-doc)
+                                      eid (:crux.db/id new-doc)
+                                      old-doc (some->> (api/history-descending crux-db snapshot (:crux.db/id new-doc))
+                                                       ;; NOTE: This comment seems like a potential bug?
+                                                       ;; history-descending inconsistently includes the current document
+                                                       ;; sometimes (on first transaction attleast
+                                                       (filter
+                                                        (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
+                                                       first :crux.db/doc)]
+                                  (into
+                                   acc
+                                   (apply
+                                    concat
+                                    (for [k (set (concat
+                                                  (keys new-doc)
+                                                  (keys old-doc)))
+                                          :when (not= k :crux.db/id)]
+                                      (let [old-val (get old-doc k)
+                                            new-val (get new-doc k)
+                                            old-set (when old-val (if (coll? old-val) (set old-val) #{old-val}))
+                                            new-set (when new-val (if (coll? new-val) (set new-val) #{new-val}))]
+                                        (log/debug "KEY:" k old-set new-set)
+                                        (concat
+                                         (for [new new-set
+                                               :when new
+                                               :when (or (nil? old-set) (not (old-set new)))]
+                                           [:db/add eid k new])
+                                         (for [old old-set
+                                               :when old
+                                               :when (or (nil? new-set) (not (new-set old)))]
+                                           [:db/retract eid k old]))))))))))
              []
              tx-ops)]
         (log/debug "3DF Tx:" new-transaction)
@@ -108,9 +115,9 @@
 (s/def :crux.dataflow/debug-connection? boolean?)
 (s/def :crux.dataflow/embed-server? boolean?)
 
-(s/def :crux.dataflow/tx-listener-options (s/keys :req [:crux.dataflow/url
-                                                        :crux.dataflow/schema]
-                                                  :opt [:crux.dataflow/poll-interval
+(s/def :crux.dataflow/tx-listener-options (s/keys :req [:crux.dataflow/schema]
+                                                  :opt [:crux.dataflow/url
+                                                        :crux.dataflow/poll-interval
                                                         :crux.dataflow/debug-connection?
                                                         :crux.dataflow/embed-server?]))
 
@@ -136,14 +143,18 @@
          (.inheritIO)
          (.start))))
 
+(def ^:const default-dataflow-server-url "ws://127.0.0.1:6262")
+
 (defn start-dataflow-tx-listener ^java.io.Closeable [crux-node
-                                                     {:keys [crux.dataflow/url
-                                                             crux.dataflow/schema
+                                                     {:keys [crux.dataflow/schema
+                                                             crux.dataflow/url
                                                              crux.dataflow/poll-interval
                                                              crux.dataflow/debug-connection?
                                                              crux.dataflow/embed-server?]
-                                                      :or {poll-interval 100
-                                                           debug-connection? false}
+                                                      :or {url default-dataflow-server-url
+                                                           poll-interval 100
+                                                           debug-connection? false
+                                                           embed-server? false}
                                                       :as options}]
   (s/assert :crux.dataflow/tx-listener-options options)
 
@@ -161,7 +172,7 @@
                                                (let [tx-id (with-open [tx-log-context (api/new-tx-log-context crux-node)]
                                                              (reduce
                                                               (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                                                                (index-to-3df conn db crux-node tx-log-entry)
+                                                                (index-to-3df conn db crux-node schema tx-log-entry)
                                                                 tx-id)
                                                               tx-id
                                                               (api/tx-log crux-node tx-log-context (inc tx-id) true)))]
