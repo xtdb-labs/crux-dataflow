@@ -99,19 +99,25 @@
 (s/def :crux.dataflow/url string?)
 (s/def :crux.dataflow/schema map?)
 (s/def :crux.dataflow/poll-interval nat-int?)
+(s/def :crux.dataflow/debug-connection? boolean?)
 
 (s/def :crux.dataflow/tx-listener-options (s/keys :req [:crux.dataflow/url
                                                         :crux.dataflow/schema]
-                                                  :opt [:crux.dataflow/poll-interval]))
+                                                  :opt [:crux.dataflow/poll-interval
+                                                        :crux.dataflow/debug-connection?]))
 
 (defn start-dataflow-tx-listener ^java.io.Closeable [crux-node
                                                      {:keys [crux.dataflow/url
                                                              crux.dataflow/schema
-                                                             crux.dataflow/poll-interval]
-                                                      :or {poll-interval 100}
+                                                             crux.dataflow/poll-interval
+                                                             crux.dataflow/debug-connection?]
+                                                      :or {poll-interval 100
+                                                           debug-connection? false}
                                                       :as options}]
   (s/assert :crux.dataflow/tx-listener-options options)
-  (let [conn (df/create-debug-conn! url)
+  (let [conn ((if debug-connection?
+                df/create-debug-conn!
+                df/create-conn!) url)
         db (df/create-db schema)]
     (df/exec! conn (df/create-db-inputs db))
     (let [worker-thread (doto (Thread.
