@@ -5,9 +5,7 @@
    [clj-3df.core :as df]
    [manifold.stream]
    [crux.api :as api]
-   [crux.codec :as c]
-   [crux.io :as cio]
-   [crux.memory :as mem])
+   [crux.codec :as c])
   (:import java.io.Closeable
            java.nio.ByteBuffer))
 
