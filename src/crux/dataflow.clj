@@ -112,12 +112,14 @@
 (s/def :crux.dataflow/url string?)
 (s/def :crux.dataflow/schema map?)
 (s/def :crux.dataflow/poll-interval nat-int?)
+(s/def :crux.dataflow/batch-size nat-int?)
 (s/def :crux.dataflow/debug-connection? boolean?)
 (s/def :crux.dataflow/embed-server? boolean?)
 
 (s/def :crux.dataflow/tx-listener-options (s/keys :req [:crux.dataflow/schema]
                                                   :opt [:crux.dataflow/url
                                                         :crux.dataflow/poll-interval
+                                                        :crux.dataflow/batch-size
                                                         :crux.dataflow/debug-connection?
                                                         :crux.dataflow/embed-server?]))
 
@@ -145,14 +147,34 @@
 
 (def ^:const default-dataflow-server-url "ws://127.0.0.1:6262")
 
+(defn- dataflow-consumer [crux-node conn db from-tx-id {:crux.dataflow/keys [schema
+                                                                             poll-interval
+                                                                             batch-size]
+                                                        :or {poll-interval 100
+                                                             batch-size 1000}
+                                                        :as options}]
+  ;; TODO: From where does this store and get its start position?
+  ;; Assume this is related to the state of the running
+  ;; declarative-dataflow instance itself?
+  (loop [tx-id from-tx-id]
+    (let [last-tx-id (with-open [tx-log-context (api/new-tx-log-context crux-node)]
+                       (->> (api/tx-log crux-node tx-log-context (inc tx-id) true)
+                            (take batch-size)
+                            (reduce
+                             (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
+                               (index-to-3df conn db crux-node schema tx-log-entry)
+                               tx-id)
+                             tx-id)))]
+      (when (= last-tx-id tx-id)
+        (Thread/sleep poll-interval))
+      (recur (long last-tx-id)))))
+
 (defn start-dataflow-tx-listener ^java.io.Closeable [crux-node
-                                                     {:keys [crux.dataflow/schema
-                                                             crux.dataflow/url
-                                                             crux.dataflow/poll-interval
-                                                             crux.dataflow/debug-connection?
-                                                             crux.dataflow/embed-server?]
+                                                     {:crux.dataflow/keys [schema
+                                                                           url
+                                                                           debug-connection?
+                                                                           embed-server?]
                                                       :or {url default-dataflow-server-url
-                                                           poll-interval 100
                                                            debug-connection? false
                                                            embed-server? false}
                                                       :as options}]
@@ -166,19 +188,11 @@
         db (df/create-db schema)]
     (df/exec! conn (df/create-db-inputs db))
     (let [worker-thread (doto (Thread.
-                               ^Runnable (fn []
-                                           (try
-                                             (loop [tx-id -1]
-                                               (let [tx-id (with-open [tx-log-context (api/new-tx-log-context crux-node)]
-                                                             (reduce
-                                                              (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                                                                (index-to-3df conn db crux-node schema tx-log-entry)
-                                                                tx-id)
-                                                              tx-id
-                                                              (api/tx-log crux-node tx-log-context (inc tx-id) true)))]
-                                                 (Thread/sleep poll-interval)
-                                                 (recur (long tx-id))))
-                                             (catch InterruptedException ignore))))
+                               #(try
+                                  (dataflow-consumer crux-node conn db -1 options)
+                                  (catch InterruptedException ignore)
+                                  (catch Throwable t
+                                    (log/fatal t "Polling failed:"))))
                           (.setName "crux.dataflow.worker-thread")
                           (.start))]
       (->CruxDataflowTxListener conn db crux-node worker-thread server-process))))
