@@ -74,7 +74,8 @@
                                                        ;; sometimes (on first transaction attleast
                                                        (filter
                                                         (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
-                                                       first :crux.db/doc)]
+                                                       first :crux.db/doc)
+                                      _ (log/debug "OLD-DOC:" old-doc)]
                                   (into
                                    acc
                                    (apply
