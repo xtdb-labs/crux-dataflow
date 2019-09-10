@@ -50,8 +50,8 @@
       false)))
 
 (defn- index-to-3df
-  [conn db crux schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
-  (let [crux-db (api/db crux)]
+  [crux-node conn db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
+  (let [crux-db (api/db crux-node)]
     (with-open [snapshot (api/new-snapshot crux-db)]
       (let [new-transaction
             (reduce
@@ -162,7 +162,7 @@
                             (take batch-size)
                             (reduce
                              (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                               (index-to-3df conn db crux-node schema tx-log-entry)
+                               (index-to-3df crux-node conn db schema tx-log-entry)
                                tx-id)
                              tx-id)))]
       (when (= last-tx-id tx-id)
