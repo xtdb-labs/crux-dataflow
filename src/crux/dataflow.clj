@@ -35,23 +35,28 @@
                              (assert (number? i))))
         :String (do (assert (coll? v))
                     (doseq [i v]
-                      (assert (string? i)))))
+                      (assert (string? i))))
+        :Bool (do (assert (coll? v))
+                  (doseq [i v]
+                    (assert (boolean? i)))))
 
       "CardinalityOne"
       (case valueType
         (:Eid :Number) (assert (number? v))
-        :String (assert (string? v))))))
+        :String (assert (string? v))
+        :Bool (assert (boolean? v))))))
 
 (defn- matches-schema? [schema doc]
   (try
     (validate-schema! schema doc)
     true
-    (catch AssertionError _
+    (catch AssertionError e
+      (log/debug e "Does not match schema:")
       false)))
 
 (defn- index-to-3df
   [crux-node conn db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
-  (let [crux-db (api/db crux-node)]
+  (let [crux-db (api/db crux-node tx-time tx-time)]
     (with-open [snapshot (api/new-snapshot crux-db)]
       (let [new-transaction
             (reduce
@@ -63,7 +68,7 @@
                                 (let [new-doc doc-or-id
                                       _ (log/debug "NEW-DOC:" new-doc)
                                       eid (:crux.db/id new-doc)
-                                      old-doc (some->> (api/history-descending crux-db snapshot (:crux.db/id new-doc))
+                                      old-doc (some->> (api/history-descending crux-db snapshot eid)
                                                        ;; NOTE: This comment seems like a potential bug?
                                                        ;; history-descending inconsistently includes the current document
                                                        ;; sometimes (on first transaction attleast
@@ -80,17 +85,17 @@
                                           :when (not= k :crux.db/id)]
                                       (let [old-val (get old-doc k)
                                             new-val (get new-doc k)
-                                            old-set (when old-val (if (coll? old-val) (set old-val) #{old-val}))
-                                            new-set (when new-val (if (coll? new-val) (set new-val) #{new-val}))]
+                                            old-set (when (not (nil? old-val)) (if (coll? old-val) (set old-val) #{old-val}))
+                                            new-set (when (not (nil? new-val)) (if (coll? new-val) (set new-val) #{new-val}))]
                                         (log/debug "KEY:" k old-set new-set)
                                         (concat
                                          (for [new new-set
-                                               :when new
-                                               :when (or (nil? old-set) (not (old-set new)))]
+                                               :when (not (nil? new))
+                                               :when (not (contains? old-set new))]
                                            [:db/add eid k new])
                                          (for [old old-set
-                                               :when old
-                                               :when (or (nil? new-set) (not (new-set old)))]
+                                               :when (not (nil? old))
+                                               :when (not (contains? new-set old))]
                                            [:db/retract eid k old]))))))))))
              []
              tx-ops)]
