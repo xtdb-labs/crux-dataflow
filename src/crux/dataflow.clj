@@ -3,48 +3,45 @@
    [clojure.spec.alpha :as s]
    [clojure.tools.logging :as log]
    [clojure.java.io :as io]
+   [clojure.set :as set]
    [clojure.string :as str]
+   [clojure.walk :as w]
    [clj-3df.core :as df]
    [manifold.stream]
    [crux.api :as api]
    [crux.codec :as c]
-   [crux.io :as cio])
+   [crux.io :as cio]
+   [crux.query :as q])
   (:import java.io.Closeable
            java.io.File
-           java.nio.ByteBuffer))
+           java.util.Date
+           [java.util.concurrent BlockingQueue LinkedBlockingQueue]))
 
-;; TODO: This breaks range queries for longs.
-(extend-protocol c/IdToBuffer
-  Long
-  (id->buffer [^Long this to]
-    (c/id-function
-     to (.array (doto (ByteBuffer/allocate Long/BYTES)
-                  (.putLong this))))))
+(defn- validate-value-type! [value-type v]
+  (assert
+   (case value-type
+     :String (string? v)
+     :Number (number? v)
+     :Bool (boolean? v)
+     (:Eid :Aid) (c/valid-id? v)
+     :Instant (instance? Date v)
+     :Uuid (uuid? v)
+     :Real (float? v))
+   (str value-type " " v)))
 
 (defn- validate-schema! [schema {:keys [crux.db/id] :as doc}]
-  (assert (instance? Long id))
+  (assert (c/valid-id? id))
   (assert (map? doc))
   (doseq [[k v] (dissoc doc :crux.db/id)
           :let [{:keys [db/valueType input_semantics]} (get schema k)]]
     (assert (contains? schema k))
     (case input_semantics
       "CardinalityMany"
-      (case valueType
-        (:Eid :Number) (do (assert (coll? v))
-                           (doseq [i v]
-                             (assert (number? i))))
-        :String (do (assert (coll? v))
-                    (doseq [i v]
-                      (assert (string? i))))
-        :Bool (do (assert (coll? v))
-                  (doseq [i v]
-                    (assert (boolean? i)))))
-
+      (do (do (assert (coll? v))
+              (doseq [i v]
+                (validate-value-type! valueType i))))
       "CardinalityOne"
-      (case valueType
-        (:Eid :Number) (assert (number? v))
-        :String (assert (string? v))
-        :Bool (assert (boolean? v))))))
+      (validate-value-type! valueType v))))
 
 (defn- matches-schema? [schema doc]
   (try
@@ -54,8 +51,27 @@
       (log/debug e "Does not match schema:")
       false)))
 
+;; TODO: This needs to be consistent and persisted for everything sent
+;; to the same 3DF server or cluster.
+(defn- get-id->long [id->long id]
+  (get (swap! id->long
+              (fn [id->long]
+                (assoc id->long id (get id->long id (inc (count id->long))))))
+       id))
+
+(defn- maybe-replace-id [id->long schema a v]
+  (if (and (or (= :crux.db/id a)
+               (= :Eid (get-in schema [a :db/valueType])))
+           (c/valid-id? v))
+    (if (coll? v)
+      (->> (for [v v]
+             (get-id->long id->long v))
+           (into (empty v)))
+      (get-id->long id->long v))
+    v))
+
 (defn- index-to-3df
-  [crux-node conn db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
+  [crux-node conn db id->long schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
   (let [crux-db (api/db crux-node tx-time tx-time)]
     (with-open [snapshot (api/new-snapshot crux-db)]
       (let [new-transaction
@@ -93,17 +109,17 @@
                                          (for [new new-set
                                                :when (not (nil? new))
                                                :when (not (contains? old-set new))]
-                                           [:db/add eid k new])
+                                           [:db/add eid k (maybe-replace-id id->long schema k new)])
                                          (for [old old-set
                                                :when (not (nil? old))
                                                :when (not (contains? new-set old))]
-                                           [:db/retract eid k old]))))))))))
+                                           [:db/retract eid k (maybe-replace-id id->long schema k old)]))))))))))
              []
              tx-ops)]
         (log/debug "3DF Tx:" new-transaction)
         @(df/exec! conn (df/transact db new-transaction))))))
 
-(defrecord CruxDataflowTxListener [conn db crux ^Thread worker-thread ^Process server-process]
+(defrecord CruxDataflowTxListener [conn db schema id->long ^Thread worker-thread ^Process server-process]
   Closeable
   (close [_]
     (manifold.stream/close! (:ws conn))
@@ -153,12 +169,12 @@
 
 (def ^:const default-dataflow-server-url "ws://127.0.0.1:6262")
 
-(defn- dataflow-consumer [crux-node conn db from-tx-id {:crux.dataflow/keys [schema
-                                                                             poll-interval
-                                                                             batch-size]
-                                                        :or {poll-interval 100
-                                                             batch-size 1000}
-                                                        :as options}]
+(defn- dataflow-consumer [crux-node conn db id->long from-tx-id {:crux.dataflow/keys [schema
+                                                                                      poll-interval
+                                                                                      batch-size]
+                                                                 :or {poll-interval 100
+                                                                      batch-size 1000}
+                                                                 :as options}]
   ;; TODO: From where does this store and get its start position?
   ;; Assume this is related to the state of the running
   ;; declarative-dataflow instance itself?
@@ -168,7 +184,7 @@
                             (take batch-size)
                             (reduce
                              (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                               (index-to-3df crux-node conn db schema tx-log-entry)
+                               (index-to-3df crux-node conn db id->long schema tx-log-entry)
                                tx-id)
                              tx-id)))]
       (when (= last-tx-id tx-id)
@@ -191,14 +207,64 @@
         conn ((if debug-connection?
                 df/create-debug-conn!
                 df/create-conn!) url)
-        db (df/create-db schema)]
+        db (df/create-db schema)
+        id->long (atom {})]
     (df/exec! conn (df/create-db-inputs db))
     (let [worker-thread (doto (Thread.
                                #(try
-                                  (dataflow-consumer crux-node conn db -1 options)
+                                  (dataflow-consumer crux-node conn db id->long -1 options)
                                   (catch InterruptedException ignore)
                                   (catch Throwable t
                                     (log/fatal t "Polling failed:"))))
                           (.setName "crux.dataflow.worker-thread")
                           (.start))]
-      (->CruxDataflowTxListener conn db crux-node worker-thread server-process))))
+      (->CruxDataflowTxListener conn db schema id->long worker-thread server-process))))
+
+(defn- transform-ids [id->long schema clauses]
+  (w/postwalk
+   (fn [x]
+     (if (and (vector? x) (= 3 (count x)))
+       (let [[e a v] x]
+         [e a (maybe-replace-id id->long schema a v)])
+       x))
+   clauses))
+
+(defn- transform-result-ids [long->id results]
+  (w/postwalk
+   (fn [x]
+     (if (and (map? x) (= [:Eid] (keys x)))
+       (update x :Eid long->id)
+       x))
+   results))
+
+(defn subscribe-query!
+  ^java.util.concurrent.BlockingQueue
+  [{:keys [id->long conn db schema] :as dataflow-tx-listener} query-name query]
+  (let [query (-> (q/normalize-query query)
+                  (update :where #(transform-ids id->long schema %))
+                  (update :rules #(transform-ids id->long schema %)))
+        queue (LinkedBlockingQueue.)]
+    (df/listen-query!
+     conn
+     query-name
+     (fn [results]
+       ;; TODO: This can map cannot be inverted all the time, need
+       ;; reverse mapping.
+       (let [long->id (set/map-invert @id->long)
+             tuples (->> (for [[tx tx-results] (->> (group-by second (transform-result-ids long->id results))
+                                                    (sort-by (comp :TxId key)))
+                               :let [tuples (for [[t tx add-delete] tx-results
+                                                  :when (= 1 add-delete)]
+                                              (vec (mapcat vals t)))]
+                               :when (seq tuples)]
+                           [(:TxId tx) (vec tuples)])
+                         (into (sorted-map)))]
+         (log/debug query-name "updated:" results "tuples:" tuples)
+         (.put queue tuples))))
+    (df/exec! conn
+              (df/query
+               db
+               query-name
+               (select-keys query [:find :where])
+               (get query :rules [])))
+    queue))
