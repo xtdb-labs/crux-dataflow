@@ -7,6 +7,7 @@
    [clojure.string :as str]
    [clojure.walk :as w]
    [clj-3df.core :as df]
+   [clj-3df.encode :as dfe]
    [manifold.stream]
    [crux.api :as api]
    [crux.codec :as c]
@@ -23,7 +24,8 @@
      :String (string? v)
      :Number (number? v)
      :Bool (boolean? v)
-     (:Eid :Aid) (c/valid-id? v)
+     :Eid (c/valid-id? v)
+     :Aid (keyword? v)
      :Instant (instance? Date v)
      :Uuid (uuid? v)
      :Real (float? v))
@@ -238,6 +240,9 @@
        x))
    results))
 
+;; TODO: Listening and execution is split in the lower level API,
+;; might resurface that. Here we reuse query-name for both query and
+;; listener key.
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
   [{:keys [id->long conn db schema] :as dataflow-tx-listener} query-name query]
@@ -248,15 +253,16 @@
     (df/listen-query!
      conn
      query-name
+     query-name
      (fn [results]
-       ;; TODO: This can map cannot be inverted all the time, need
-       ;; reverse mapping.
+       ;; TODO: This can map should not be inverted all the time, need
+       ;; a reverse mapping.
        (let [long->id (set/map-invert @id->long)
              tuples (->> (for [[tx tx-results] (->> (group-by second (transform-result-ids long->id results))
                                                     (sort-by (comp :TxId key)))
                                :let [tuples (for [[t tx add-delete] tx-results
                                                   :when (= 1 add-delete)]
-                                              (vec (mapcat vals t)))]
+                                              (mapv dfe/decode-value t))]
                                :when (seq tuples)]
                            [(:TxId tx) (vec tuples)])
                          (into (sorted-map)))]
@@ -269,3 +275,6 @@
                (select-keys query [:find :where])
                (get query :rules [])))
     queue))
+
+(defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]
+  (df/unlisten-query! conn query-name query-name))
