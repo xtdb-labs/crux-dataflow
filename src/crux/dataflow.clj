@@ -82,8 +82,9 @@
                                 (do (log/debug "SKIPPING-DOC:" doc-or-id)
                                     acc)
                                 (let [new-doc doc-or-id
-                                      _ (log/debug "NEW-DOC:" new-doc)
+                                      _ (log/debug "NEW-DOC:" (pr-str new-doc))
                                       eid (:crux.db/id new-doc)
+                                      eid-long (get-id->long id->long eid)
                                       old-doc (some->> (api/history-descending crux-db snapshot eid)
                                                        ;; NOTE: This comment seems like a potential bug?
                                                        ;; history-descending inconsistently includes the current document
@@ -91,7 +92,7 @@
                                                        (filter
                                                         (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
                                                        first :crux.db/doc)
-                                      _ (log/debug "OLD-DOC:" old-doc)]
+                                      _ (log/debug "OLD-DOC:" (pr-str old-doc))]
                                   (into
                                    acc
                                    (apply
@@ -104,19 +105,19 @@
                                             new-val (get new-doc k)
                                             old-set (when (not (nil? old-val)) (if (coll? old-val) (set old-val) #{old-val}))
                                             new-set (when (not (nil? new-val)) (if (coll? new-val) (set new-val) #{new-val}))]
-                                        (log/debug "KEY:" k old-set new-set)
+                                        (log/debug "KEY:" k (pr-str old-set) (pr-str new-set))
                                         (concat
                                          (for [new new-set
                                                :when (not (nil? new))
                                                :when (not (contains? old-set new))]
-                                           [:db/add eid k (maybe-replace-id id->long schema k new)])
+                                           [:db/add eid-long k (maybe-replace-id id->long schema k new)])
                                          (for [old old-set
                                                :when (not (nil? old))
                                                :when (not (contains? new-set old))]
-                                           [:db/retract eid k (maybe-replace-id id->long schema k old)]))))))))))
+                                           [:db/retract eid-long k (maybe-replace-id id->long schema k old)]))))))))))
              []
              tx-ops)]
-        (log/debug "3DF Tx:" new-transaction)
+        (log/debug "3DF Tx:" (pr-str new-transaction))
         @(df/exec! conn (df/transact db new-transaction))))))
 
 (defrecord CruxDataflowTxListener [conn db schema id->long ^Thread worker-thread ^Process server-process]
@@ -259,7 +260,7 @@
                                :when (seq tuples)]
                            [(:TxId tx) (vec tuples)])
                          (into (sorted-map)))]
-         (log/debug query-name "updated:" results "tuples:" tuples)
+         (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
          (.put queue tuples))))
     (df/exec! conn
               (df/query
