@@ -1,0 +1,16 @@
+version: '3.7'
+
+services:
+  3df-server:
+    build:
+      context: .
+      dockerfile: docker-images/3df-server
+
+    restart: always
+    command: "cargo run --release -- --"
+    ports:
+      - "6262:6262"
+
+    working_dir: /usr/src/server/declarative-dataflow/server
+    environment:
+      - AWS_PROFILE=crux
