@@ -71,6 +71,7 @@ But only 1500ms for a batch of size 500
    - submit things more intelligently
 - [ ] thorough test of repeating connections
 - [ ] log reindexing
+- [ ] 3DF string ids
 
 ## Architectural pathways
 There are two ways 

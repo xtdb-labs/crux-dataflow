@@ -12,6 +12,7 @@
   (:import java.io.Closeable
            (java.util.concurrent LinkedBlockingQueue)))
 
+
 (def schema
   {:user/name (merge
                (attribute/of-type :String)
@@ -46,12 +47,12 @@
 
 
 (api/submit-tx
- node
- [[:crux.tx/put
-   {:crux.db/id :patrik
-    :user/name "Patrik"
-    :user/likes ["apples"]
-    :user/email "ool@g2mii.com"}]])
+  node
+  [[:crux.tx/put
+    {:crux.db/id :katrik
+     :user/name "katrik"
+     :user/likes ["apples" "daples"]
+     :user/email "ool22@g2eii.com"}]])
 
 (def sub1
   ^LinkedBlockingQueue
