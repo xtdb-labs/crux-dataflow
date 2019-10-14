@@ -1,4 +1,4 @@
-(ns crux.dataflow-2
+(ns crux.dataflow
   (:require
    [clojure.spec.alpha :as s]
    [clojure.tools.logging :as log]
@@ -16,6 +16,8 @@
            java.io.File
            java.util.Date
            [java.util.concurrent BlockingQueue LinkedBlockingQueue]))
+
+
 
 (defn- validate-value-type! [value-type v]
   (assert
@@ -52,36 +54,45 @@
       (log/debug e "Does not match schema:")
       false)))
 
-;; TODO: This needs to be consistent and persisted for everything sent
-;; to the same 3DF server or cluster.
-(defn- get-id->long [id-mapping id]
-  (get-in (swap! id-mapping
-                 (fn [{:keys [id->long long->id]}]
-                   (let [long-id (get id->long id (inc (count id->long)))]
-                     {:id->long (assoc id->long id long-id)
-                      :long->id (assoc long->id long-id id)})))
-          [:id->long id]))
 
-(defn- get-long->id [id-mapping long-id]
-  (or (get-in @id-mapping [:long->id long-id])
-      (throw (IllegalStateException. (str "Unknown long id: " long-id)))))
 
-(defn- new-id-mapping []
-  (atom {:id->long {} :long->id {}}))
+(defn- encode-query-ids [schema clauses]
+  (w/postwalk
+   (fn [x]
+     (if (and (vector? x) (= 3 (count x)))
+       (let [[e a v] x]
+         [e a (maybe-encode-id schema a v)])
+       x))
+   clauses))
 
-(defn- maybe-replace-id [id-mapping schema a v]
+(defn- decode-result-ids [results]
+  (w/postwalk
+   (fn [x]
+     (if (and (map? x) (= [:Eid] (keys x)))
+       (update x :Eid maybe-decode-id)
+       x))
+   results))
+
+(defn encode-id [v]
+  (if (keyword? v)
+    (pr-str v)
+    v)) ; todo case type
+
+(defn- maybe-encode-id [schema a v]
   (if (and (or (= :crux.db/id a)
                (= :Eid (get-in schema [a :db/valueType])))
            (c/valid-id? v))
     (if (coll? v)
-      (->> (for [v v]
-             (get-id->long id-mapping v))
+      (->> (for [v v] ; todo check on maps
+             (encode-id v))
            (into (empty v)))
-      (get-id->long id-mapping v))
+      (encode-id v))
     v))
 
+
+
 (defn- index-to-3df
-  [crux-node conn db id-mapping schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
+  [crux-node conn db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id]}]
   (let [crux-db (api/db crux-node tx-time tx-time)]
     (with-open [snapshot (api/new-snapshot crux-db)]
       (let [new-transaction
@@ -94,8 +105,8 @@
                                 (let [new-doc doc-or-id
                                       _ (log/debug "NEW-DOC:" (pr-str new-doc))
                                       eid (:crux.db/id new-doc)
-                                      eid-long eid
-                                     ;eid-long (get-id->long id-mapping eid)
+                                      eid-3df (maybe-encode-id eid)
+                                     ;eid-long (get-id->long eid)
                                       old-doc (some->> (api/history-descending crux-db snapshot eid)
                                                        ;; NOTE: This comment seems like a potential bug?
                                                        ;; history-descending inconsistently includes the current document
@@ -121,17 +132,17 @@
                                          (for [new new-set
                                                :when (not (nil? new))
                                                :when (not (contains? old-set new))]
-                                           [:db/add eid-long k (maybe-replace-id id-mapping schema k new)])
+                                           [:db/add eid-3df k (maybe-encode-id schema k new)])
                                          (for [old old-set
                                                :when (not (nil? old))
                                                :when (not (contains? new-set old))]
-                                           [:db/retract eid-long k (maybe-replace-id id-mapping schema k old)]))))))))))
+                                           [:db/retract eid-3df k (maybe-encode-id schema k old)]))))))))))
              []
              tx-ops)]
         (log/debug "3DF Tx:" (pr-str new-transaction))
         @(df/exec! conn (df/transact db new-transaction))))))
 
-(defrecord CruxDataflowTxListener [conn db schema id-mapping ^Thread worker-thread ^Process server-process]
+(defrecord CruxDataflowTxListener [conn db schema ^Thread worker-thread ^Process server-process]
   Closeable
   (close [_]
     (manifold.stream/close! (:ws conn))
@@ -158,6 +169,7 @@
                                                         :crux.dataflow/embed-server?]))
 
 (def ^:const declerative-server-resource "declarative-server-v0.2.0-x86_64-unknown-linux-gnu")
+; todo allow to manage external server processes
 
 (defn- linux? []
   (str/includes? (str/lower-case (System/getProperty "os.name")) "linux"))
@@ -181,7 +193,7 @@
 
 (def ^:const default-dataflow-server-url "ws://127.0.0.1:6262")
 
-(defn- dataflow-consumer [crux-node conn db id-mapping from-tx-id {:crux.dataflow/keys [schema
+(defn- dataflow-consumer [crux-node conn db from-tx-id {:crux.dataflow/keys [schema
                                                                                         poll-interval
                                                                                         batch-size]
                                                                    :or {poll-interval 100
@@ -196,7 +208,7 @@
                             (take batch-size)
                             (reduce
                              (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                               (index-to-3df crux-node conn db id-mapping schema tx-log-entry)
+                               (index-to-3df crux-node conn db schema tx-log-entry)
                                tx-id)
                              tx-id)))]
       (when (= last-tx-id tx-id)
@@ -219,52 +231,35 @@
         conn ((if debug-connection?
                 df/create-debug-conn!
                 df/create-conn!) url)
-        db (df/create-db schema)
-        id-mapping (new-id-mapping)]
+        db (df/create-db schema)]
     (df/exec! conn (df/create-db-inputs db))
     (let [worker-thread (doto (Thread.
                                #(try
-                                  (dataflow-consumer crux-node conn db id-mapping -1 options)
+                                  (dataflow-consumer crux-node conn db -1 options)
                                   (catch InterruptedException ignore)
                                   (catch Throwable t
                                     (log/fatal t "Polling failed:"))))
                           (.setName "crux.dataflow.worker-thread")
                           (.start))]
-      (->CruxDataflowTxListener conn db schema id-mapping worker-thread server-process))))
+      (->CruxDataflowTxListener conn db schema worker-thread server-process))))
 
-(defn- transform-ids [id-mapping schema clauses]
-  (w/postwalk
-   (fn [x]
-     (if (and (vector? x) (= 3 (count x)))
-       (let [[e a v] x]
-         [e a (maybe-replace-id id-mapping schema a v)])
-       x))
-   clauses))
-
-(defn- transform-result-ids [id-mapping results]
-  (w/postwalk
-   (fn [x]
-     (if (and (map? x) (= [:Eid] (keys x)))
-       (update x :Eid #(get-long->id id-mapping %))
-       x))
-   results))
 
 ;; TODO: Listening and execution is split in the lower level API,
 ;; might resurface that. Here we reuse query-name for both query and
 ;; listener key.
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
-  [{:keys [id-mapping conn db schema] :as dataflow-tx-listener} query-name query]
+  [{:keys [conn db schema] :as dataflow-tx-listener} query-name query]
   (let [query (-> (q/normalize-query query)
-                  (update :where #(transform-ids id-mapping schema %))
-                  (update :rules #(transform-ids id-mapping schema %)))
+                  (update :where #(encode-query-ids schema %))
+                  (update :rules #(encode-query-ids schema %)))
         queue (LinkedBlockingQueue.)]
     (df/listen-query!
      conn
      query-name
      query-name
      (fn [results]
-       (let [tuples (->> (for [[tx tx-results] (->> (group-by second (transform-result-ids id-mapping results))
+       (let [tuples (->> (for [[tx tx-results] (->> (group-by second (decode-result-ids results))
                                                     (sort-by (comp :TxId key)))
                                :let [tuples (for [[t tx add-delete] tx-results
                                                   :when (= 1 add-delete)]

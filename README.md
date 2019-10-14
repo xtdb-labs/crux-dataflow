@@ -67,11 +67,13 @@ But only 1500ms for a batch of size 500
 ```
 
 ## TODO
-- [ ] idempotent schema upload or update
-   - submit things more intelligently
-- [ ] thorough test of repeating connections
-- [ ] log reindexing
-- [ ] 3DF string ids
+- [ ] 3DF string/uuid ids
+- [ ] transact in only required query data 
+- [ ] split subscription key and query key
+- [ ] investigate the indexing bug with tx-log
+
+optional
+- [ ] manage external 3df server processes?
 
 ## Architectural pathways
 There are two ways 
