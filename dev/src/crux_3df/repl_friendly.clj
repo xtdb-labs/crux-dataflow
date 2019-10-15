@@ -6,7 +6,7 @@
     [clojure.pprint :as pp]
     [crux.api :as api]
     [crux.bootstrap :as b]
-    [crux.dataflow :as dataflow]
+    [crux.dataflow-2 :as dataflow]
     [crux.io :as cio]
     [manifold.deferred :as d])
   (:import java.io.Closeable
@@ -16,6 +16,7 @@
 (def schema
   {:user/name (merge
                (attribute/of-type :String)
+
                (attribute/input-semantics :db.semantics.cardinality/one)
                (attribute/tx-time))
    :user/email (merge
@@ -37,6 +38,16 @@
     {:kv-backend "crux.kv.rocksdb.RocksKv"
      :event-log-dir "data/eventlog"
      :db-dir "data/db-dir"}))
+
+(def node-threads
+  (doall
+   (pmap
+    (fn [i]
+      (api/start-standalone-node
+       {:kv-backend "crux.kv.rocksdb.RocksKv"
+        :event-log-dir (str "data-" i "/eventlog")
+        :db-dir (str "data-" i "/db-dir")}))
+    (range 0 6))))
 
 (def crux-3df
   (dataflow/start-dataflow-tx-listener
@@ -74,15 +85,14 @@
 ; (dataflow/unsubscribe-query! crux-3df "patrik-email")
 
 
-(def q1
-  (let [{:keys [conn db]} crux-3df]
-    (df/exec! conn
-      (df/query
-        db "patrik-email"
-        '[:find ?email
-          :where
-          [?patrik :user/name "Patrik"]
-          [?patrik :user/email ?email]]))))
+(let [{:keys [conn db]} crux-3df]
+  (df/exec! conn
+    (df/query
+      db "patrik-email"
+      '[:find ?email
+        :where
+        [?patrik :user/name "Patrik"]
+        [?patrik :user/email ?email]]))))
 
 (let [{:keys [conn db]} crux-3df]
   (df/listen!
@@ -90,18 +100,17 @@
     :key
     (fn [& data] (log/info "DATA: " data))))
 
-(let [{:keys [conn db]} crux-3df]
+(let [{:keys [conn db]} crux-3df
   (df/listen-query!
     conn
     "patrik-email"
     (fn [& message]
       (log/info "QUERY BACK: " message))))
 
-(d/on-realized q1
-  (fn [x] (println "yes" x))
-  (fn [x] (println "no" x)))
-
 (comment
+
+  (.close node)
+  (.close crux-3df)
 
   (dataflow/subscribe-query!
    crux-3df

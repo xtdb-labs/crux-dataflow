@@ -1,4 +1,4 @@
-(defproject juxt/crux-3df "0.1.0-SNAPSHOT"
+(defproject juxt/crux-3df-demo "0.1.0-SNAPSHOT"
   :description "A example standalone webservice with crux"
   :url "https://github.com/juxt/crux"
   :license {:name "The MIT License"

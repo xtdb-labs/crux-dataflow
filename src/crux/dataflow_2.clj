@@ -1,4 +1,4 @@
-(ns crux.dataflow
+(ns crux.dataflow-2
   (:require
    [clojure.spec.alpha :as s]
    [clojure.tools.logging :as log]
@@ -56,6 +56,28 @@
 
 
 
+(defn encode-id [v]
+  (if (keyword? v)
+    (pr-str v)
+    v)) ; todo case type
+
+(defn- maybe-encode-id [schema a v]
+  (if (and (or (= :crux.db/id a)
+               (= :Eid (get-in schema [a :db/valueType])))
+           (c/valid-id? v))
+    (if (coll? v)
+      (->> (for [v v] ; todo check on maps
+             (encode-id v))
+           (into (empty v)))
+      (encode-id v))
+    v))
+
+(defn- maybe-decode-id [v]
+  (if (and (string? v) (re-find #"^:" v))
+    (try
+      (read-string v)
+      (catch Exception e v))))
+
 (defn- encode-query-ids [schema clauses]
   (w/postwalk
    (fn [x]
@@ -73,22 +95,6 @@
        x))
    results))
 
-(defn encode-id [v]
-  (if (keyword? v)
-    (pr-str v)
-    v)) ; todo case type
-
-(defn- maybe-encode-id [schema a v]
-  (if (and (or (= :crux.db/id a)
-               (= :Eid (get-in schema [a :db/valueType])))
-           (c/valid-id? v))
-    (if (coll? v)
-      (->> (for [v v] ; todo check on maps
-             (encode-id v))
-           (into (empty v)))
-      (encode-id v))
-    v))
-
 
 
 (defn- index-to-3df
@@ -105,8 +111,7 @@
                                 (let [new-doc doc-or-id
                                       _ (log/debug "NEW-DOC:" (pr-str new-doc))
                                       eid (:crux.db/id new-doc)
-                                      eid-3df (maybe-encode-id eid)
-                                     ;eid-long (get-id->long eid)
+                                      eid-3df (encode-id eid)
                                       old-doc (some->> (api/history-descending crux-db snapshot eid)
                                                        ;; NOTE: This comment seems like a potential bug?
                                                        ;; history-descending inconsistently includes the current document
@@ -142,7 +147,8 @@
         (log/debug "3DF Tx:" (pr-str new-transaction))
         @(df/exec! conn (df/transact db new-transaction))))))
 
-(defrecord CruxDataflowTxListener [conn db schema ^Thread worker-thread ^Process server-process]
+(defrecord CruxDataflowTxListener
+  [conn db schema ^Thread worker-thread ^Process server-process]
   Closeable
   (close [_]
     (manifold.stream/close! (:ws conn))
@@ -244,6 +250,7 @@
       (->CruxDataflowTxListener conn db schema worker-thread server-process))))
 
 
+
 ;; TODO: Listening and execution is split in the lower level API,
 ;; might resurface that. Here we reuse query-name for both query and
 ;; listener key.
@@ -279,3 +286,40 @@
 
 (defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]
   (df/unlisten-query! conn query-name query-name))
+
+(comment
+
+  (def node
+    (api/start-standalone-node
+     {:kv-backend "crux.kv.rocksdb.RocksKv"
+      :event-log-dir "data/eventlog"
+      :db-dir "data/db-dir"}))
+
+
+  (def node-threads
+    (vec
+     (for [i (range 0 6)]
+       (Thread.
+        #(do
+           (println "starting node #" i)
+           (api/start-standalone-node
+            {:kv-backend "crux.kv.memdb.MemKv"
+             :event-log-dir (str "data-" i "/eventlog")
+             :db-dir (str "data-" i "/db-dir")}))))))
+
+  (dotimes [i 6]
+    (.start (nth node-threads i)))
+
+  (doseq [t node-threads] (.stop t))
+
+  (def node-threads
+    (vec
+     (for [i (range 0 6)]
+       (Thread.
+        #(do
+           (println "starting node #" i)
+           (api/start-standalone-node
+            {:kv-backend "crux.kv.rocksdb.RocksKv"
+             :event-log-dir (str "data-" i "/eventlog")
+             :db-dir (str "data-" i "/db-dir")})))))))
+
