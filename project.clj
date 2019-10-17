@@ -10,4 +10,5 @@
                  [com.sixthnormal/clj-3df "0.1.0-alpha"]]
   :profiles {:dev {:dependencies [[ch.qos.logback/logback-classic "1.2.3"]]}}
   :middleware [leiningen.project-version/middleware]
+  :source-paths ["src" "dev"]
   :global-vars {*warn-on-reflection* true})

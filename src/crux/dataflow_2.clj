@@ -13,9 +13,8 @@
    [crux.io :as cio]
    [crux.query :as q])
   (:import java.io.Closeable
-           java.io.File
            java.util.Date
-           [java.util.concurrent BlockingQueue LinkedBlockingQueue]))
+           [java.util.concurrent LinkedBlockingQueue]))
 
 
 
@@ -291,7 +290,7 @@
 
   (def node
     (api/start-standalone-node
-     {:kv-backend "crux.kv.rocksdb.RocksKv"
+     {:kv-backend "crux.kv.rocksdb/kv"
       :event-log-dir "data/eventlog"
       :db-dir "data/db-dir"}))
 
@@ -319,7 +318,7 @@
         #(do
            (println "starting node #" i)
            (api/start-standalone-node
-            {:kv-backend "crux.kv.rocksdb.RocksKv"
+            {:kv-backend "crux.kv.rocksdb/kv"
              :event-log-dir (str "data-" i "/eventlog")
              :db-dir (str "data-" i "/db-dir")})))))))
 

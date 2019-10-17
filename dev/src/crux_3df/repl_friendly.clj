@@ -5,7 +5,7 @@
     [clj-3df.attribute :as attribute]
     [clojure.pprint :as pp]
     [crux.api :as api]
-    [crux.bootstrap :as b]
+    [crux.node :as node]
     [crux.dataflow-2 :as dataflow]
     [crux.io :as cio]
     [manifold.deferred :as d])
@@ -32,22 +32,12 @@
                 (attribute/input-semantics :db.semantics.cardinality/many)
                 (attribute/tx-time))})
 
-
 (def node
-  (api/start-standalone-node
-    {:kv-backend "crux.kv.rocksdb.RocksKv"
-     :event-log-dir "data/eventlog"
-     :db-dir "data/db-dir"}))
-
-(def node-threads
-  (doall
-   (pmap
-    (fn [i]
-      (api/start-standalone-node
-       {:kv-backend "crux.kv.rocksdb.RocksKv"
-        :event-log-dir (str "data-" i "/eventlog")
-        :db-dir (str "data-" i "/db-dir")}))
-    (range 0 6))))
+  (api/start-node
+    {:crux.node/topology :crux.standalone/topology
+     :crux.node/kv-store "crux.kv.rocksdb/kv"
+     :crux.standalone/event-log-dir "data/eventlog"
+     :crux.kv/db-dir "data/db-dir"}))
 
 (def crux-3df
   (dataflow/start-dataflow-tx-listener
