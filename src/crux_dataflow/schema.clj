@@ -1,7 +1,8 @@
 (ns crux-dataflow.schema
   (:require [clojure.tools.logging :as log]
             [crux.codec :as c]
-            [clojure.walk :as w])
+            [clojure.walk :as w]
+            [crux.query :as q])
   (:import (java.util Date)))
 
 (defn- validate-value-type! [value-type v]
@@ -78,3 +79,8 @@
         (update x :Eid maybe-decode-id)
         x))
     results))
+
+(defn prepare-query [schema query]
+  (-> (q/normalize-query query)
+      (update :where #(encode-query-ids schema %))
+      (update :rules #(encode-query-ids schema %))))

@@ -1,16 +1,9 @@
-(ns crux-3df.repl-friendly
+(ns crux-dataflow.dev
   (:require
-    [clojure.tools.logging :as log]
-    [clj-3df.core :as df]
     [clj-3df.attribute :as attribute]
-    [clojure.pprint :as pp]
     [crux.api :as api]
-    [crux.node :as node]
-    [crux-dataflow.api-2 :as dataflow]
-    [crux.io :as cio]
-    [manifold.deferred :as d])
-  (:import java.io.Closeable
-           (java.util.concurrent LinkedBlockingQueue)))
+    [crux-dataflow.api-2 :as dataflow])
+  (:import (java.util.concurrent LinkedBlockingQueue)))
 
 
 (def schema
@@ -51,12 +44,11 @@
     {:crux.db/id :katrik
      :user/name "katrik"
      :user/likes ["apples" "daples"]
-     :user/email "m"}]])
+     :user/email "imea"}]])
 
 (def sub1
   ^LinkedBlockingQueue
-  (dataflow/subscribe-query!
-    crux-3df
+  (dataflow/subscribe-query! crux-3df
     {:crux.dataflow/sub-id ::one
      :crux.dataflow/query
     '[:find ?email
@@ -64,6 +56,7 @@
       [?patrik :user/name "Patrik"]
       [?patrik :user/email ?email]]}))
 
+crux-3df
 
 (.poll sub1)
 

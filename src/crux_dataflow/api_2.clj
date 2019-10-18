@@ -10,9 +10,7 @@
     [crux-dataflow.schema :as schema]
     [crux-dataflow.crux-helpers :as f]
     [crux-dataflow.misc-helpers :as fm]
-    [crux-dataflow.3df-ingest :as ingest]
-    [crux.query :as q]
-    [clojure.pprint :as pp])
+    [crux-dataflow.3df-ingest :as ingest])
   (:import java.io.Closeable
            [java.util.concurrent LinkedBlockingQueue]))
 
@@ -106,38 +104,37 @@
       (->CruxDataflowTxListener conn df-db schema worker-thread server-process))))
 
 
+(defn submit-query! [{:keys [conn db schema] :as dataflow-tx-listener} query-name query-prepared]
+  (df/exec! conn
+            (df/query
+              db
+              query-name
+              (select-keys query-prepared [:find :where])
+              (get query-prepared :rules []))))
+
+(defn- mk-listener [query-name queue]
+  (fn on-3df-message [results]
+    (log/debug "RESULTS" query-name results)
+    (let [tuples (->> (for [[tx tx-results] (->> (group-by second (schema/decode-result-ids results))
+                                                 (sort-by (comp :TxId key)))
+                            :let [tuples (for [[t tx add-delete] tx-results
+                                               :when (= 1 add-delete)]
+                                           (mapv dfe/decode-value t))]
+                            :when (seq tuples)]
+                        [(:TxId tx) (vec tuples)])
+                      (into (sorted-map)))]
+      (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
+      (.put queue tuples))))
 
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
   [{:keys [conn db schema] :as dataflow-tx-listener}
-   {:crux.dataflow/keys [sub-id query]}]
-  (let [query-n (-> (q/normalize-query query)
-                    (update :where #(schema/encode-query-ids schema %))
-                    (update :rules #(schema/encode-query-ids schema %)))
-        query-name (map-query-to-id! query-n)
+   {:crux.dataflow/keys [sub-id query query-name]}]
+  (let [query--prepared (schema/prepare-query schema query)
+        query-name (or query-name (map-query-to-id! query--prepared))
         queue (LinkedBlockingQueue.)]
-    (df/listen-query!
-     conn
-     query-name
-     sub-id
-     (fn [results]
-       (log/debug "RESULTS" results)
-       (let [tuples (->> (for [[tx tx-results] (->> (group-by second (schema/decode-result-ids results))
-                                                    (sort-by (comp :TxId key)))
-                               :let [tuples (for [[t tx add-delete] tx-results
-                                                  :when (= 1 add-delete)]
-                                              (mapv dfe/decode-value t))]
-                               :when (seq tuples)]
-                           [(:TxId tx) (vec tuples)])
-                         (into (sorted-map)))]
-         (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
-         (.put queue tuples))))
-    (df/exec! conn
-              (df/query
-                db
-                query-name
-                (select-keys query-n [:find :where])
-                (get query-n :rules [])))
+    (df/listen-query! conn query-name sub-id (mk-listener query-name queue))
+    (submit-query! dataflow-tx-listener query-name query--prepared)
     queue))
 
 (defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]
