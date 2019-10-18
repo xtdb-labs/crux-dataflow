@@ -4,12 +4,14 @@
             [crux-dataflow.schema :as schema]
             [clj-3df.core :as df]))
 
-(defn- tx-put
+(defn- process-put
+  "submits docs in put tx"
+  ; todo possibly select part of the doc matching schema
   [schema crux-db snapshot acc doc-or-id
    {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx-log-entry-w-doc}]
   ;
   (if-not (schema/matches-schema? schema doc-or-id)
-    (do (log/debug "SKIPPING-DOC:" doc-or-id)
+    (do (log/debug "DOC DOESN'T MATCH SCHEMA, SKIPPING:" doc-or-id)
         acc)
     (let [new-doc doc-or-id
           _ (log/debug "NEW-DOC:" (pr-str new-doc))
@@ -46,16 +48,17 @@
 
 
 (defn index-to-3df
-  [crux-node conn db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]
+  [crux-node conn df-db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]
+  (println tx)
   (let [crux-db (api/db crux-node tx-time tx-time)]
     (with-open [snapshot (api/new-snapshot crux-db)]
       (let [new-transaction
             (reduce
              (fn [acc [op-key doc-or-id]]
                (case op-key
-                 :crux.tx/put (tx-put schema db snapshot acc doc-or-id tx)))
+                 :crux.tx/put (process-put schema crux-db snapshot acc doc-or-id tx)))
              []
              tx-ops)]
         (log/debug "3DF Tx:" (pr-str new-transaction))
-        @(df/exec! conn (df/transact db new-transaction))))))
+        @(df/exec! conn (df/transact df-db new-transaction))))))
 

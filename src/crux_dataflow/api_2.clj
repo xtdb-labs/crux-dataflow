@@ -17,6 +17,16 @@
            [java.util.concurrent LinkedBlockingQueue]))
 
 
+(def ^:private query->name (atom {}))
+
+(defn- map-query-to-id! [q]
+  (if-let [qname (@query->name q)]
+    qname
+    (let [qname (fm/uuid)]
+      (swap! query->name assoc q qname)
+      qname)))
+
+
 (defrecord CruxDataflowTxListener
   [conn db schema ^Thread worker-thread ^Process server-process]
   Closeable
@@ -45,20 +55,21 @@
                                                         :crux.dataflow/embed-server?]))
 
 
-(defn- dataflow-consumer [crux-node conn db from-tx-id
-                          {:crux.dataflow/keys [schema
-                                                poll-interval
-                                                batch-size]
-                                      :or {poll-interval 100
-                                           batch-size 1000}
-                                      :as options}]
+(defn- dataflow-consumer
+  [crux-node conn df-db from-tx-id
+   {:crux.dataflow/keys [schema
+                         poll-interval
+                         batch-size]
+               :or {poll-interval 100
+                    batch-size 1000}
+               :as options}]
   (loop [tx-id from-tx-id]
     (let [last-tx-id (with-open [tx-log-context (api/new-tx-log-context crux-node)]
                        (->> (api/tx-log crux-node tx-log-context (inc tx-id) true)
                             (take batch-size)
                             (reduce
                              (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                               (ingest/index-to-3df crux-node conn db schema tx-log-entry)
+                               (ingest/index-to-3df crux-node conn df-db schema tx-log-entry)
                                tx-id)
                              tx-id)))]
       (when (= last-tx-id tx-id)
@@ -81,27 +92,20 @@
         conn ((if debug-connection?
                 df/create-debug-conn!
                 df/create-conn!) url)
-        db (df/create-db schema)
+        df-db (df/create-db schema)
         from-tx-id (inc (f/latest-tx-id crux-node))]
-    (df/exec! conn (df/create-db-inputs db))
+    (df/exec! conn (df/create-db-inputs df-db))
     (let [worker-thread (doto (Thread.
                                #(try
-                                  (dataflow-consumer crux-node conn db from-tx-id options)
+                                  (dataflow-consumer crux-node conn df-db from-tx-id options)
                                   (catch InterruptedException ignore)
                                   (catch Throwable t
                                     (log/fatal t "Polling failed:"))))
-                          (.setName "crux.dataflow.worker-thread")
+                          (.setName "crux-dataflow.worker-thread")
                           (.start))]
-      (->CruxDataflowTxListener conn db schema worker-thread server-process))))
+      (->CruxDataflowTxListener conn df-db schema worker-thread server-process))))
 
-(def ^:private query->name (atom {}))
 
-(defn- compute-query-name! [q]
-  (if-let [qname (@query->name q)]
-    qname
-    (let [qname (fm/uuid)]
-      (swap! query->name assoc q qname)
-      qname)))
 
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
@@ -110,14 +114,14 @@
   (let [query-n (-> (q/normalize-query query)
                     (update :where #(schema/encode-query-ids schema %))
                     (update :rules #(schema/encode-query-ids schema %)))
-        query-name (compute-query-name! query-n)
+        query-name (map-query-to-id! query-n)
         queue (LinkedBlockingQueue.)]
     (df/listen-query!
      conn
      query-name
      sub-id
      (fn [results]
-       (pp/pprint "hmhm" results)
+       (log/debug "RESULTS" results)
        (let [tuples (->> (for [[tx tx-results] (->> (group-by second (schema/decode-result-ids results))
                                                     (sort-by (comp :TxId key)))
                                :let [tuples (for [[t tx add-delete] tx-results
