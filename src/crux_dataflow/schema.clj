@@ -31,7 +31,7 @@
       "CardinalityOne"
       (validate-value-type! valueType v))))
 
-(defn- matches-schema? [schema doc]
+(defn matches-schema? [schema doc]
   (try
     (validate-schema! schema doc)
     true
@@ -44,7 +44,7 @@
     (str "#crux/id "(pr-str v))
     v)) ; todo case type
 
-(defn- maybe-encode-id [schema a v]
+(defn maybe-encode-id [schema a v]
   (if (and (or (= :crux.db/id a)
                (= :Eid (get-in schema [a :db/valueType])))
            (c/valid-id? v))
@@ -62,7 +62,7 @@
       (catch Exception e v))
     v))
 
-(defn- encode-query-ids [schema clauses]
+(defn encode-query-ids [schema clauses]
   (w/postwalk
     (fn [x]
       (if (and (vector? x) (= 3 (count x)))
@@ -71,7 +71,7 @@
         x))
     clauses))
 
-(defn- decode-result-ids [results]
+(defn decode-result-ids [results]
   (w/postwalk
     (fn [x]
       (if (and (map? x) (= [:Eid] (keys x)))

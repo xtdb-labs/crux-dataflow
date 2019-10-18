@@ -6,12 +6,12 @@
     [clojure.pprint :as pp]
     [crux.api :as api]
     [crux.node :as node]
-    [crux.dataflow :as cdf]
-    [crux.dataflow-2 :as dataflow]
+    [crux-dataflow.api-2 :as dataflow]
     [crux.io :as cio]
     [manifold.deferred :as d])
   (:import java.io.Closeable
            (java.util.concurrent LinkedBlockingQueue)))
+
 
 (def schema
   {:user/name (merge
@@ -52,14 +52,14 @@
     {:crux.db/id :katrik
      :user/name "katrik"
      :user/likes ["apples" "daples"]
-     :user/email "ool@g2333qq.com"}]])
+     :user/email "ool@g233qq.com"}]])
 
 (def sub1
   ^LinkedBlockingQueue
   (dataflow/subscribe-query!
     crux-3df
-    {::cdf/sub-id ::one
-     ::cdf/query
+    {:crux.dataflow/sub-id ::one
+     :crux.dataflow/query
     '[:find ?email
       :where
       [?patrik :user/name "Patrik"]
@@ -74,28 +74,6 @@
 
 ; (dataflow/unsubscribe-query! crux-3df "patrik-email")
 
-
-(let [{:keys [conn db]} crux-3df]
-  (df/exec! conn
-    (df/query
-      db "patrik-email"
-      '[:find ?email
-        :where
-        [?patrik :user/name "Patrik"]
-        [?patrik :user/email ?email]])))
-
-(let [{:keys [conn db]} crux-3df]
-  (df/listen!
-    conn
-    :key
-    (fn [& data] (log/info "DATA: " data))))
-
-(let [{:keys [conn db]} crux-3df
-  (df/listen-query!
-    conn
-    "patrik-email"
-    (fn [& message]
-      (log/info "QUERY BACK: " message))))
 
 (comment
 
