@@ -6,6 +6,7 @@
     [clojure.pprint :as pp]
     [crux.api :as api]
     [crux.node :as node]
+    [crux.dataflow :as cdf]
     [crux.dataflow-2 :as dataflow]
     [crux.io :as cio]
     [manifold.deferred :as d])
@@ -51,17 +52,18 @@
     {:crux.db/id :katrik
      :user/name "katrik"
      :user/likes ["apples" "daples"]
-     :user/email "ool@g2ei.com"}]])
+     :user/email "ool@g2333qq.com"}]])
 
 (def sub1
   ^LinkedBlockingQueue
   (dataflow/subscribe-query!
     crux-3df
-    "patrik-email3"
+    {::cdf/sub-id ::one
+     ::cdf/query
     '[:find ?email
       :where
       [?patrik :user/name "Patrik"]
-      [?patrik :user/email ?email]]))
+      [?patrik :user/email ?email]]}))
 
 
 (.poll sub1)

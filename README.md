@@ -67,10 +67,13 @@ But only 1500ms for a batch of size 500
 ```
 
 ## TODO
+- [*] investigate the indexing bug with tx-log
+
 - [ ] 3DF string/uuid ids
 - [ ] transact in only required query data 
+
+- [ ] evict/delete/cas txs
 - [ ] split subscription key and query key
-- [ ] investigate the indexing bug with tx-log
 
 optional
 - [ ] manage external 3df server processes?
