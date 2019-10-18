@@ -75,5 +75,7 @@ But only 1500ms for a batch of size 500
 optional
 - [ ] manage external 3df server processes?
 
-## Architectural pathways
-There are two ways 
+## Architecture
+
+## Known Caveats
+For 

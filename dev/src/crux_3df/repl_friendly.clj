@@ -12,11 +12,9 @@
   (:import java.io.Closeable
            (java.util.concurrent LinkedBlockingQueue)))
 
-
 (def schema
   {:user/name (merge
                (attribute/of-type :String)
-
                (attribute/input-semantics :db.semantics.cardinality/one)
                (attribute/tx-time))
    :user/email (merge
@@ -32,7 +30,7 @@
                 (attribute/input-semantics :db.semantics.cardinality/many)
                 (attribute/tx-time))})
 
-(def node
+(defonce node
   (api/start-node
     {:crux.node/topology :crux.standalone/topology
      :crux.node/kv-store "crux.kv.rocksdb/kv"
@@ -53,7 +51,7 @@
     {:crux.db/id :katrik
      :user/name "katrik"
      :user/likes ["apples" "daples"]
-     :user/email "ool22@g2eii.com"}]])
+     :user/email "ool@g2ei.com"}]])
 
 (def sub1
   ^LinkedBlockingQueue
@@ -82,7 +80,7 @@
       '[:find ?email
         :where
         [?patrik :user/name "Patrik"]
-        [?patrik :user/email ?email]]))))
+        [?patrik :user/email ?email]])))
 
 (let [{:keys [conn db]} crux-3df]
   (df/listen!

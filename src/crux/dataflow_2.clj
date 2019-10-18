@@ -10,6 +10,7 @@
    [manifold.stream]
    [crux.api :as api]
    [crux.codec :as c]
+   [crux.crux-helpers :as f]
    [crux.io :as cio]
    [crux.query :as q])
   (:import java.io.Closeable
@@ -56,8 +57,8 @@
 
 
 (defn encode-id [v]
-  (if (keyword? v)
-    (pr-str v)
+  (if (or (string? v) (keyword? v))
+    (str "#crux/id "(pr-str v))
     v)) ; todo case type
 
 (defn- maybe-encode-id [schema a v]
@@ -72,10 +73,11 @@
     v))
 
 (defn- maybe-decode-id [v]
-  (if (and (string? v) (re-find #"^:" v))
+  (if (string? v)
     (try
       (read-string v)
-      (catch Exception e v))))
+      (catch Exception e v))
+    v))
 
 (defn- encode-query-ids [schema clauses]
   (w/postwalk
@@ -198,12 +200,13 @@
 
 (def ^:const default-dataflow-server-url "ws://127.0.0.1:6262")
 
-(defn- dataflow-consumer [crux-node conn db from-tx-id {:crux.dataflow/keys [schema
-                                                                                        poll-interval
-                                                                                        batch-size]
-                                                                   :or {poll-interval 100
-                                                                        batch-size 1000}
-                                                                   :as options}]
+(defn- dataflow-consumer [crux-node conn db from-tx-id
+                          {:crux.dataflow/keys [schema
+                                                poll-interval
+                                                batch-size]
+                                      :or {poll-interval 100
+                                           batch-size 1000}
+                                      :as options}]
   ;; TODO: From where does this store and get its start position?
   ;; Assume this is related to the state of the running
   ;; declarative-dataflow instance itself?
@@ -220,27 +223,28 @@
         (Thread/sleep poll-interval))
       (recur (long last-tx-id)))))
 
-(defn start-dataflow-tx-listener ^java.io.Closeable [crux-node
-                                                     {:crux.dataflow/keys [schema
-                                                                           url
-                                                                           debug-connection?
-                                                                           embed-server?]
-                                                      :or {url default-dataflow-server-url
-                                                           debug-connection? false
-                                                           embed-server? false}
-                                                      :as options}]
+(defn start-dataflow-tx-listener
+  ^java.io.Closeable [crux-node
+                      {:crux.dataflow/keys [schema
+                                            url
+                                            debug-connection?
+                                            embed-server?]
+                       :or {url default-dataflow-server-url
+                            debug-connection? false
+                            embed-server? false}
+                       :as options}]
   (s/assert :crux.dataflow/tx-listener-options options)
-
   (let [server-process (when embed-server?
                          (start-dataflow-server))
         conn ((if debug-connection?
                 df/create-debug-conn!
                 df/create-conn!) url)
-        db (df/create-db schema)]
+        db (df/create-db schema)
+        from-tx-id (inc (f/latest-tx-id crux-node))]
     (df/exec! conn (df/create-db-inputs db))
     (let [worker-thread (doto (Thread.
                                #(try
-                                  (dataflow-consumer crux-node conn db -1 options)
+                                  (dataflow-consumer crux-node conn db from-tx-id options)
                                   (catch InterruptedException ignore)
                                   (catch Throwable t
                                     (log/fatal t "Polling failed:"))))
@@ -248,7 +252,8 @@
                           (.start))]
       (->CruxDataflowTxListener conn db schema worker-thread server-process))))
 
-
+; use hashing
+; look into status map
 
 ;; TODO: Listening and execution is split in the lower level API,
 ;; might resurface that. Here we reuse query-name for both query and
