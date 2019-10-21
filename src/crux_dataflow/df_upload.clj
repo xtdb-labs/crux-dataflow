@@ -1,8 +1,67 @@
 (ns crux-dataflow.df-upload
   (:require [clojure.tools.logging :as log]
             [crux.api :as api]
+            [clojure.test]
             [crux-dataflow.schema :as schema]
             [clj-3df.core :as df]))
+
+
+(defn calc-changed-triplets [eid-3df schema old-doc new-doc]
+  (vec
+    (apply
+      concat
+      (for [k (set (concat (keys new-doc) (keys old-doc)))
+            :when (not= k :crux.db/id)]
+        (let [old-val (get old-doc k)
+              new-val (get new-doc k)
+              old-set (when (not (nil? old-val)) (if (coll? old-val) (set old-val) #{old-val}))
+              new-set (when (not (nil? new-val)) (if (coll? new-val) (set new-val) #{new-val}))]
+          (concat
+            (for [old old-set
+                  :when (not (nil? old))
+                  :when (not (contains? new-set old))]
+              [:db/retract eid-3df k (schema/maybe-encode-id schema k old)])
+            (for [new new-set
+                  :when (not (nil? new))
+                  :when (not (contains? old-set new))]
+              [:db/add eid-3df k (schema/maybe-encode-id schema k new)])))))))
+
+
+(assert
+  (let [args1
+        ["#crux/id :katrik"
+         #:user{:name {:db/valueType :String,
+                       :query_support "AdaptiveWCO",
+                       :index_direction "Both",
+                       :input_semantics "CardinalityOne",
+                       :trace_slack {:TxId 1}},
+                :email {:db/valueType :String,
+                        :query_support "AdaptiveWCO",
+                        :index_direction "Both",
+                        :input_semantics "CardinalityOne",
+                        :trace_slack {:TxId 1}},
+                :knows {:db/valueType :Eid,
+                        :query_support "AdaptiveWCO",
+                        :index_direction "Both",
+                        :input_semantics "CardinalityMany",
+                        :trace_slack {:TxId 1}},
+                :likes {:db/valueType :String,
+                        :query_support "AdaptiveWCO",
+                        :index_direction "Both",
+                        :input_semantics "CardinalityMany",
+                        :trace_slack {:TxId 1}}}
+         {:crux.db/id :katrik,
+          :user/name "katrik",
+          :user/likes ["apples" "daples"],
+          :user/email "iwefoiiejfoiewfj"}
+         {:crux.db/id :katrik,
+          :user/name "katrik",
+          :user/likes ["apples" "daples"],
+          :user/email "iwefoiiejfewfj"}]]
+    (= [[:db/retract "#crux/id :katrik" :user/email "iwefoiiejfoiewfj"]
+        [:db/add "#crux/id :katrik" :user/email "iwefoiiejfewfj"]]
+       (apply calc-changed-triplets args1))))
+
 
 (defn- process-put
   "submits docs in put tx"
@@ -24,27 +83,10 @@
                            (filter
                             (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
                            first :crux.db/doc)
-          _ (log/debug "OLD-DOC:" (pr-str old-doc))]
-      (into
-       acc
-       (apply ; flatten
-        concat
-        (for [k (set (concat (keys new-doc) (keys old-doc)))
-              :when (not= k :crux.db/id)]
-          (let [old-val (get old-doc k)
-                new-val (get new-doc k)
-                old-set (when (not (nil? old-val)) (if (coll? old-val) (set old-val) #{old-val}))
-                new-set (when (not (nil? new-val)) (if (coll? new-val) (set new-val) #{new-val}))]
-            (log/debug "KEY:" k (pr-str old-set) (pr-str new-set))
-            (concat
-             (for [new new-set
-                   :when (not (nil? new))
-                   :when (not (contains? old-set new))]
-               [:db/add eid-3df k (schema/maybe-encode-id schema k new)])
-             (for [old old-set
-                   :when (not (nil? old))
-                   :when (not (contains? new-set old))]
-               [:db/retract eid-3df k (schema/maybe-encode-id schema k old)])))))))))
+          _ (log/debug "OLD-DOC:" (pr-str old-doc))
+          doc-changed-triplets (calc-changed-triplets eid-3df schema old-doc new-doc)]
+      (into acc doc-changed-triplets))))
+
 
 (defn index-to-3df
   [crux-node conn df-db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]

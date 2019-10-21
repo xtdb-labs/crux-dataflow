@@ -40,14 +40,6 @@
      :crux.dataflow/debug-connection? true
      :crux.dataflow/embed-server? false}))
 
-
-(api/submit-tx node
-  [[:crux.tx/put
-    {:crux.db/id :katrik
-     :user/name "katrik"
-     :user/likes ["apples" "daples"]
-     :user/email "imea"}]])
-
 (def ^LinkedBlockingQueue sub1
   (dataflow/subscribe-query! crux-3df
     {:crux.dataflow/sub-id ::one
@@ -58,16 +50,12 @@
       [[?patrik :user/name "Patrik"]
        [?patrik :user/email ?email]]}}))
 
-(ingest/upload-crux-query-results
-  crux-3df
-  [{:crux.db/id :katrik
-    :user/name "katrik"
-    :user/likes ["apples" "daples"]
-    :user/email "imea"}
-   {:crux.db/id :batrik
-    :user/name "katrik"
-    :user/likes ["apples" "daples"]
-    :user/email "imea"}])
+(api/submit-tx node
+  [[:crux.tx/put
+      {:crux.db/id :katrik
+       :user/name "katrik"
+       :user/likes ["apples" "daples"]
+       :user/email "iwefoiiejfewfj"}]])
 
 (pp/pprint crux-3df)
 

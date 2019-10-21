@@ -45,9 +45,9 @@
     (str "#crux/id "(pr-str v))
     v)) ; todo case type
 
-(defn maybe-encode-id [schema a v]
-  (if (and (or (= :crux.db/id a)
-               (= :Eid (get-in schema [a :db/valueType])))
+(defn maybe-encode-id [schema attr-name v]
+  (if (and (or (= :crux.db/id attr-name)
+               (= :Eid (get-in schema [attr-name :db/valueType])))
            (c/valid-id? v))
     (if (coll? v)
       (->> (for [v v] ; todo check on maps
