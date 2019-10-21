@@ -67,7 +67,7 @@
                             (take batch-size)
                             (reduce
                              (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                               (ingest/index-to-3df crux-node conn df-db schema tx-log-entry)
+                               (ingest/upload-crux-tx-to-3df crux-node conn df-db schema tx-log-entry)
                                tx-id)
                              tx-id)))]
       (when (= last-tx-id tx-id)
@@ -134,6 +134,8 @@
         query-name (or query-name (map-query-to-id! query--prepared))
         fr-query (assoc query :full-results? true)
         results (api/q (api/db crux-node) fr-query)
+        _ (println :up fr-query)
+        _ (println :res results)
         queue (LinkedBlockingQueue.)]
     (ingest/upload-crux-query-results df-listener (vec results))
     (df/listen-query! conn query-name sub-id (mk-listener query-name queue))

@@ -7,23 +7,24 @@
     [clojure.pprint :as pp])
   (:import (java.util.concurrent LinkedBlockingQueue)))
 
-
+; db semantics doesn't mean what you think it means
+; see https://github.com/sixthnormal/clj-3df/issues/45
 (def schema
   {:user/name (merge
                (attribute/of-type :String)
-               (attribute/input-semantics :db.semantics.cardinality/one)
+               (attribute/input-semantics :db.semantics/raw)
                (attribute/tx-time))
    :user/email (merge
                 (attribute/of-type :String)
-                (attribute/input-semantics :db.semantics.cardinality/one)
+                (attribute/input-semantics :db.semantics/raw)
                 (attribute/tx-time))
    :user/knows (merge
                 (attribute/of-type :Eid)
-                (attribute/input-semantics :db.semantics.cardinality/many)
+                (attribute/input-semantics :db.semantics/raw)
                 (attribute/tx-time))
    :user/likes (merge
                 (attribute/of-type :String)
-                (attribute/input-semantics :db.semantics.cardinality/many)
+                (attribute/input-semantics :db.semantics/raw)
                 (attribute/tx-time))})
 
 (defonce node
@@ -45,25 +46,33 @@
     {:crux.dataflow/sub-id ::one
      :crux.dataflow/query-name "one"
      :crux.dataflow/query
-    '{:find [?email]
-      :where
-      [[?patrik :user/name "Patrik"]
-       [?patrik :user/email ?email]]}}))
+     '{:find [?email]
+       :where
+       [[?user :user/name "Patrik"]
+        [?user :user/email ?email]]}}))
+
+(api/q (api/db node)
+  '{:find [?email]
+    :full-results? true
+    :where
+     [[?user :user/name "Patrik"]
+      [?user :user/email ?email]]})
 
 (api/submit-tx node
   [[:crux.tx/put
-      {:crux.db/id :katrik
-       :user/name "katrik"
-       :user/likes ["apples" "daples"]
-       :user/email "iwefoiiejfewfj"}]])
-
-(pp/pprint crux-3df)
-
-(pp/pprint @(:query-listeners (.-conn crux-3df)))
+    {:crux.db/id :katrik
+     :user/name "Patrik"
+     :user/knows [:ids/bart]
+     :user/likes ["apples" "daples"]
+     :user/email "i00fiojooiiioo"}]])
 
 (.poll sub1)
 
 
 (comment
+  (pp/pprint crux-3df)
+
+  (pp/pprint @(:query-listeners (.-conn crux-3df)))
+
   (.close node)
   (.close crux-3df))

@@ -81,6 +81,7 @@
     results))
 
 (defn prepare-map-for-3df [{:keys [crux.db/id] :as crux-query-result-map}]
+  (println :crux-query-result-map crux-query-result-map)
   (-> crux-query-result-map
       (assoc :db/id (encode-id id))
       (dissoc :crux.db/id)))

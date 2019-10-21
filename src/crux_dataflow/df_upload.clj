@@ -26,6 +26,52 @@
                   :when (not (contains? old-set new))]
               [:db/add eid-3df k (schema/maybe-encode-id schema k new)])))))))
 
+(defn- process-put
+  "submits docs in put tx"
+  ; todo possibly select part of the doc matching schema
+  [schema crux-db snapshot acc doc-or-id
+   {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx-log-entry-w-doc}]
+  ;
+  (if-not (schema/matches-schema? schema doc-or-id)
+    (do (log/debug "DOC DOESN'T MATCH SCHEMA, SKIPPING:" doc-or-id)
+        acc)
+    (let [new-doc doc-or-id
+          _ (log/debug "NEW-DOC:" (pr-str new-doc))
+          eid (:crux.db/id new-doc)
+          eid-3df (schema/encode-id eid)
+          old-doc (some->> (api/history-descending crux-db snapshot eid)
+                           ;; NOTE: This comment seems like a potential bug?
+                           ;; history-descending inconsistently includes the current document
+                           ;; sometimes (on first transaction attleast
+                           (filter
+                            (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
+                           first :crux.db/doc)
+          _ (log/debug "OLD-DOC:" (pr-str old-doc))
+          doc-changed-triplets (calc-changed-triplets eid-3df schema old-doc new-doc)]
+      (into acc doc-changed-triplets))))
+
+(defn upload-crux-tx-to-3df
+  [crux-node conn df-db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]
+  (log/debug "CRUX_TX:" tx)
+  (let [crux-db (api/db crux-node tx-time tx-time)]
+    (with-open [snapshot (api/new-snapshot crux-db)]
+      (let [new-transaction
+            (reduce
+             (fn [acc [op-key doc-or-id]]
+               (case op-key
+                 :crux.tx/put (process-put schema crux-db snapshot acc doc-or-id tx)))
+             []
+             tx-ops)]
+        (log/debug "3DF Tx:" (pr-str new-transaction))
+        @(df/exec! conn (df/transact df-db new-transaction))))))
+
+(defn upload-crux-query-results
+  [{:keys [conn df-db crux-node schema] :as df-listener}
+   crux-query-results]
+  (let [df-compatible-maps (mapv schema/prepare-map-for-3df crux-query-results)]
+    @(df/exec! conn (df/transact df-db df-compatible-maps))))
+
+
 
 (assert
   (let [args1
@@ -61,51 +107,3 @@
     (= [[:db/retract "#crux/id :katrik" :user/email "iwefoiiejfoiewfj"]
         [:db/add "#crux/id :katrik" :user/email "iwefoiiejfewfj"]]
        (apply calc-changed-triplets args1))))
-
-
-(defn- process-put
-  "submits docs in put tx"
-  ; todo possibly select part of the doc matching schema
-  [schema crux-db snapshot acc doc-or-id
-   {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx-log-entry-w-doc}]
-  ;
-  (if-not (schema/matches-schema? schema doc-or-id)
-    (do (log/debug "DOC DOESN'T MATCH SCHEMA, SKIPPING:" doc-or-id)
-        acc)
-    (let [new-doc doc-or-id
-          _ (log/debug "NEW-DOC:" (pr-str new-doc))
-          eid (:crux.db/id new-doc)
-          eid-3df (schema/encode-id eid)
-          old-doc (some->> (api/history-descending crux-db snapshot eid)
-                           ;; NOTE: This comment seems like a potential bug?
-                           ;; history-descending inconsistently includes the current document
-                           ;; sometimes (on first transaction attleast
-                           (filter
-                            (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
-                           first :crux.db/doc)
-          _ (log/debug "OLD-DOC:" (pr-str old-doc))
-          doc-changed-triplets (calc-changed-triplets eid-3df schema old-doc new-doc)]
-      (into acc doc-changed-triplets))))
-
-
-(defn index-to-3df
-  [crux-node conn df-db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]
-  (println tx)
-  (let [crux-db (api/db crux-node tx-time tx-time)]
-    (with-open [snapshot (api/new-snapshot crux-db)]
-      (let [new-transaction
-            (reduce
-             (fn [acc [op-key doc-or-id]]
-               (case op-key
-                 :crux.tx/put (process-put schema crux-db snapshot acc doc-or-id tx)))
-             []
-             tx-ops)]
-        (log/debug "3DF Tx:" (pr-str new-transaction))
-        @(df/exec! conn (df/transact df-db new-transaction))))))
-
-(defn upload-crux-query-results
-  [{:keys [conn df-db crux-node schema] :as df-listener}
-   crux-query-results]
-  (let [df-compatible-maps (mapv schema/prepare-map-for-3df crux-query-results)]
-    @(df/exec! conn (df/transact df-db df-compatible-maps))))
-
