@@ -2,7 +2,9 @@
   (:require
     [clj-3df.attribute :as attribute]
     [crux.api :as api]
-    [crux-dataflow.api-2 :as dataflow])
+    [crux-dataflow.api-2 :as dataflow]
+    [crux-dataflow.df-upload :as ingest]
+    [clojure.pprint :as pp])
   (:import (java.util.concurrent LinkedBlockingQueue)))
 
 
@@ -46,44 +48,34 @@
      :user/likes ["apples" "daples"]
      :user/email "imea"}]])
 
-(def sub1
-  ^LinkedBlockingQueue
+(def ^LinkedBlockingQueue sub1
   (dataflow/subscribe-query! crux-3df
     {:crux.dataflow/sub-id ::one
+     :crux.dataflow/query-name "one"
      :crux.dataflow/query
-    '[:find ?email
+    '{:find [?email]
       :where
-      [?patrik :user/name "Patrik"]
-      [?patrik :user/email ?email]]}))
+      [[?patrik :user/name "Patrik"]
+       [?patrik :user/email ?email]]}}))
 
-crux-3df
+(ingest/upload-crux-query-results
+  crux-3df
+  [{:crux.db/id :katrik
+    :user/name "katrik"
+    :user/likes ["apples" "daples"]
+    :user/email "imea"}
+   {:crux.db/id :batrik
+    :user/name "katrik"
+    :user/likes ["apples" "daples"]
+    :user/email "imea"}])
+
+(pp/pprint crux-3df)
+
+(pp/pprint @(:query-listeners (.-conn crux-3df)))
 
 (.poll sub1)
 
-; when subscribing consecutively queue stops working
-; with (dataflow/subscribe-query! crux-3df "patrik-email")
-; so I need to check subscription map
-
-; (dataflow/unsubscribe-query! crux-3df "patrik-email")
-
 
 (comment
-
   (.close node)
-  (.close crux-3df)
-
-  (dataflow/subscribe-query!
-   crux-3df
-   "patrik-likes"
-   '[:find ?likes
-     :where
-     [?patrik :user/name "Patrik"]
-     [?patrik :user/likes ?likes]])
-
-  (dataflow/subscribe-query!
-   crux-3df
-   "patrik-knows-1"
-   '[:find ?knows
-     :where
-     [?patrik :user/name "Patrik"]
-     [?patrik :user/knows ?knows]]))
+  (.close crux-3df))

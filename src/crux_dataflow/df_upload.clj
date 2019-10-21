@@ -1,4 +1,4 @@
-(ns crux-dataflow.3df-ingest
+(ns crux-dataflow.df-upload
   (:require [clojure.tools.logging :as log]
             [crux.api :as api]
             [crux-dataflow.schema :as schema]
@@ -27,7 +27,7 @@
           _ (log/debug "OLD-DOC:" (pr-str old-doc))]
       (into
        acc
-       (apply
+       (apply ; flatten
         concat
         (for [k (set (concat (keys new-doc) (keys old-doc)))
               :when (not= k :crux.db/id)]
@@ -46,7 +46,6 @@
                    :when (not (contains? new-set old))]
                [:db/retract eid-3df k (schema/maybe-encode-id schema k old)])))))))))
 
-
 (defn index-to-3df
   [crux-node conn df-db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]
   (println tx)
@@ -61,4 +60,10 @@
              tx-ops)]
         (log/debug "3DF Tx:" (pr-str new-transaction))
         @(df/exec! conn (df/transact df-db new-transaction))))))
+
+(defn upload-crux-query-results
+  [{:keys [conn df-db crux-node schema] :as df-listener}
+   crux-query-results]
+  (let [df-compatible-maps (mapv schema/prepare-map-for-3df crux-query-results)]
+    @(df/exec! conn (df/transact df-db df-compatible-maps))))
 

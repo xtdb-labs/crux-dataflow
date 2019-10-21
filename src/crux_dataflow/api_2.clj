@@ -10,7 +10,7 @@
     [crux-dataflow.schema :as schema]
     [crux-dataflow.crux-helpers :as f]
     [crux-dataflow.misc-helpers :as fm]
-    [crux-dataflow.3df-ingest :as ingest])
+    [crux-dataflow.df-upload :as ingest])
   (:import java.io.Closeable
            [java.util.concurrent LinkedBlockingQueue]))
 
@@ -26,7 +26,7 @@
 
 
 (defrecord CruxDataflowTxListener
-  [conn db schema ^Thread worker-thread ^Process server-process]
+  [conn df-db crux-node schema ^Thread worker-thread ^Process server-process]
   Closeable
   (close [_]
     (manifold.stream/close! (:ws conn))
@@ -101,7 +101,7 @@
                                     (log/fatal t "Polling failed:"))))
                           (.setName "crux-dataflow.worker-thread")
                           (.start))]
-      (->CruxDataflowTxListener conn df-db schema worker-thread server-process))))
+      (->CruxDataflowTxListener conn df-db crux-node schema worker-thread server-process))))
 
 
 (defn submit-query! [{:keys [conn db schema] :as dataflow-tx-listener} query-name query-prepared]
@@ -128,13 +128,16 @@
 
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
-  [{:keys [conn db schema] :as dataflow-tx-listener}
+  [{:keys [conn df-db crux-node schema] :as df-listener}
    {:crux.dataflow/keys [sub-id query query-name]}]
   (let [query--prepared (schema/prepare-query schema query)
         query-name (or query-name (map-query-to-id! query--prepared))
+        fr-query (assoc query :full-results? true)
+        results (api/q (api/db crux-node) fr-query)
         queue (LinkedBlockingQueue.)]
+    (ingest/upload-crux-query-results df-listener (vec results))
     (df/listen-query! conn query-name sub-id (mk-listener query-name queue))
-    (submit-query! dataflow-tx-listener query-name query--prepared)
+    (submit-query! df-listener query-name query--prepared)
     queue))
 
 (defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]

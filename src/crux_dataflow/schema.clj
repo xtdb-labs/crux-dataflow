@@ -80,6 +80,11 @@
         x))
     results))
 
+(defn prepare-map-for-3df [{:keys [crux.db/id] :as crux-query-result-map}]
+  (-> crux-query-result-map
+      (assoc :db/id (encode-id id))
+      (dissoc :crux.db/id)))
+
 (defn prepare-query [schema query]
   (-> (q/normalize-query query)
       (update :where #(encode-query-ids schema %))
