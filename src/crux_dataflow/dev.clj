@@ -59,9 +59,9 @@
   [[:crux.tx/put
     {:crux.db/id :patrik
      :user/name "Patrik"
-     :user/knows [:ids/bart]
+   ; :user/knows [:ids/bart] ; fixme may not index properly
      :user/likes ["apples" "daples"]
-     :user/email "iifojweiwei"}]])
+     :user/email "ojweojwjeofijwi"}]])
 
 (dataflow/transact-data-for-query!
   crux-3df

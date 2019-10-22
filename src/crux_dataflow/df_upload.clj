@@ -3,8 +3,7 @@
             [crux.api :as api]
             [clojure.test]
             [crux-dataflow.schema :as schema]
-            [clj-3df.core :as df]
-            [clojure.pprint :as pp]))
+            [clj-3df.core :as df]))
 
 
 (defn calc-changed-triplets [eid-3df schema old-doc new-doc]
@@ -34,7 +33,7 @@
    {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx-log-entry-w-doc}]
   ;
   (if-not (schema/matches-schema? schema doc-or-id)
-    (do (log/debug "DOC DOESN'T MATCH SCHEMA, SKIPPING:" doc-or-id)
+    (do (log/debug "DOC DOESN'T MATCH SCHEMA, SKIPPING:" (pr-str doc-or-id))
         acc)
     (let [new-doc doc-or-id
           _ (log/debug "NEW-DOC:" (pr-str new-doc))
@@ -53,7 +52,7 @@
 
 (defn upload-crux-tx-to-3df
   [crux-node conn df-db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]
-  (log/debug "CRUX_TX:" tx)
+  (log/debug "CRUX_TX:" (pr-str tx))
   (let [crux-db (api/db crux-node tx-time tx-time)]
     (with-open [snapshot (api/new-snapshot crux-db)]
       (let [new-transaction
@@ -70,7 +69,6 @@
   [{:keys [conn df-db crux-node schema] :as df-listener}
    crux-query-results]
   (let [df-compatible-maps (mapv (partial schema/prepare-map-for-3df schema) crux-query-results)]
-    (pp/pprint df-compatible-maps)
     @(df/exec! conn (df/transact df-db df-compatible-maps))))
 
 
