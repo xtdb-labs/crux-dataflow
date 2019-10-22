@@ -68,9 +68,14 @@ But only 1500ms for a batch of size 500
 
 ## TODO
 - [*] investigate the indexing bug with tx-log
+- [*] 3DF string/uuid ids
+- [*] transact in only required query data
 
-- [ ] 3DF string/uuid ids
-- [ ] transact in only required query data 
+- [ ] transact in full results data, so better query modification
+if it's needed at all?
+
+- [ ] collection values ser / deser
+- [ ] query data pull shapes
 
 - [ ] evict/delete/cas txs
 - [ ] split subscription key and query key

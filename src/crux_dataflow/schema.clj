@@ -3,7 +3,8 @@
             [crux.codec :as c]
             [clojure.walk :as w]
             [crux.query :as q]
-            [crux-dataflow.misc-helpers :as fm])
+            [crux-dataflow.misc-helpers :as fm]
+            [clj-3df.attribute :as attribute])
   (:import (java.util Date)))
 
 (def test-schema
@@ -28,6 +29,10 @@
                  :input_semantics "CardinalityMany",
                  :trace_slack {:TxId 1}}})
 
+; db input_semantics doesn't mean what you think it means
+; they are more like write semantics
+; see https://github.com/comnik/declarative-dataflow/issues/85
+; see https://github.com/sixthnormal/clj-3df/issues/45
 (defn- validate-value-type! [value-type v]
   (assert
     (case value-type
@@ -41,10 +46,34 @@
       :Real (float? v))
     (str "Invalid value type: " value-type " " (pr-str v))))
 
-; db input_semantics doesn't mean what you think it means
-; they are more like write semantics
-; see https://github.com/comnik/declarative-dataflow/issues/85
+(defn- attr-def [attr-type & [collection-type opts]]
+  (merge
+    (if collection-type
+      {::collection-type collection-type})
+    (attribute/of-type attr-type)
+    (attribute/input-semantics (if (= ::set collection-type)
+                                 :db.semantics.cardinality/many
+                                 :db.semantics/raw))
+    (attribute/tx-time)))
+
+; Raw
+; No special semantics enforced. Source is responsible for everything.
+
+; CardinalityOne
+; Only a single value per eid is allowed at any given timestamp.
+; causes panic
 ; see https://github.com/sixthnormal/clj-3df/issues/45
+
+; CardinalityMany
+; Multiple different values for any given eid are allowed, but (e,v) pairs are enforced to be distinct.
+; so useful for sets, but will destroy lists
+(defn inflate [local-schema]
+  (reduce-kv
+    (fn [m attr-name attr-semantics]
+      (assoc m attr-name (apply attr-def attr-semantics)))
+    {}
+    local-schema))
+
 (defn- validate-schema! [schema {:keys [crux.db/id] :as doc}]
   (assert (c/valid-id? id))
   (assert (map? doc))
@@ -115,6 +144,13 @@
       (dissoc :crux.db/id)
       (auto-encode-eids schema)))
 
+(defn prepare-query [schema query]
+  (-> (q/normalize-query query)
+      (update :where #(encode-query-ids schema %))
+      (update :rules #(encode-query-ids schema %))))
+
+
+
 (assert
   (= {:user/name "Patrik",
       :user/knows ["#crux/id :ids/bart"],
@@ -129,7 +165,24 @@
                   :user/email "iifojweiwei"}]]
        (apply prepare-map-for-3df args))))
 
-(defn prepare-query [schema query]
-  (-> (q/normalize-query query)
-      (update :where #(encode-query-ids schema %))
-      (update :rules #(encode-query-ids schema %))))
+(assert
+  (= #:user{:email {:db/valueType :String,
+                    :query_support "AdaptiveWCO",
+                    :index_direction "Both",
+                    :input_semantics "Raw",
+                    :trace_slack {:TxId 1}},
+            :name {:db/valueType :String,
+                   :query_support "AdaptiveWCO",
+                   :index_direction "Both",
+                   :input_semantics "Raw",
+                   :trace_slack {:TxId 1}},
+            :knows {:crux-dataflow.schema/collection-type :crux-dataflow.schema/set,
+                    :db/valueType :Eid,
+                    :query_support "AdaptiveWCO",
+                    :index_direction "Both",
+                    :input_semantics "CardinalityMany",
+                    :trace_slack {:TxId 1}}}
+     (inflate
+       {:user/email [:String]
+        :user/name [:String]
+        :user/knows [:Eid ::set]})))

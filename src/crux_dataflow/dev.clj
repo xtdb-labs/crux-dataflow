@@ -1,32 +1,25 @@
 (ns crux-dataflow.dev
   (:require
-    [clj-3df.attribute :as attribute]
     [crux.api :as api]
     [crux-dataflow.api-2 :as dataflow]
-    [crux-dataflow.df-upload :as ingest]
     [clojure.pprint :as pp]
-    [clj-3df.core :as df])
+    [crux-dataflow.schema :as schema])
   (:import (java.util.concurrent LinkedBlockingQueue)))
 
-; db semantics doesn't mean what you think it means
-; see https://github.com/sixthnormal/clj-3df/issues/45
-(def schema
-  {:user/name (merge
-               (attribute/of-type :String)
-               (attribute/input-semantics :db.semantics.cardinality/many)
-               (attribute/tx-time))
-   :user/email (merge
-                (attribute/of-type :String)
-                (attribute/input-semantics :db.semantics.cardinality/many)
-                (attribute/tx-time))
-   :user/knows (merge
-                (attribute/of-type :Eid)
-                (attribute/input-semantics :db.semantics.cardinality/many)
-                (attribute/tx-time))
-   :user/likes (merge
-                (attribute/of-type :String)
-                (attribute/input-semantics :db.semantics.cardinality/many)
-                (attribute/tx-time))})
+
+(def task-schema
+  (schema/inflate
+    {:task/owner [:Eid]
+     :task/title [:String]
+     :task/content [:String]
+     :task/followers [:Eid ::schema/set]}))
+
+(def user-schema
+  (schema/inflate
+    {:user/name [:String]
+     :user/email [:String]
+     :user/knows [:Eid ::schema/set]
+     :user/likes [:String ::schema/list]}))
 
 (defonce node
   (api/start-node
@@ -37,31 +30,32 @@
      :crux.kv/db-dir "data/db-dir"}))
 
 (def crux-3df
-  (dataflow/start-dataflow-tx-listener
+  (dataflow/start-dataflow-tx-listener ; todo restart connection
     node
-    {:crux.dataflow/schema schema
+    {:crux.dataflow/schema            (merge user-schema task-schema)
      :crux.dataflow/debug-connection? true
-     :crux.dataflow/embed-server? false}))
+     :crux.dataflow/embed-server?     false}))
 
 (def ^LinkedBlockingQueue sub1
   (dataflow/subscribe-query! crux-3df
     {:crux.dataflow/sub-id ::one
      :crux.dataflow/query-name "one"
      :crux.dataflow/query
-     '{:find [?user]
+     '{:find [?email]
        :where
        [[?user :user/name "Patrik"]
         [?user :user/email ?email]]}}))
 
 (.poll sub1)
+; poll worked just once
 
 (api/submit-tx node
   [[:crux.tx/put
     {:crux.db/id :patrik
-     :user/name "Patrik"
-   ; :user/knows [:ids/bart] ; fixme may not index properly
-     :user/likes ["apples" "daples"]
-     :user/email "ojifiwjfoweijfweofijwi"}]])
+     :user/name  "Patrik"
+     ; :user/knows [:ids/bart] ; fixme may not index properly
+     ; :user/likes ["apples" "daples"] ; fixme fails to accept seqs
+     :user/email "ojwelfjelfkweifwjji"}]])
 
 (dataflow/transact-data-for-query!
   crux-3df
@@ -70,36 +64,6 @@
    [[?user :user/name "Patrik"]
     [?user :user/email ?email]]})
 
-
-(df/exec!
-  (.-conn crux-3df)
-  (df/register-query (.-df-db crux-3df) "email"
-    '[:find ?email
-      :where
-      [?user :user/name "Patrik"]
-      [?user :user/email ?email]]))
-
-(df/exec!
-  (.-conn crux-3df)
-  (df/query
-    (.-df-db crux-3df)
-    "email2"
-    '[:find ?email
-      :where
-      [?user :user/name "Patrik"]
-      [?user :user/email ?email]]))
-
-(df/listen-query!
-  (.-conn crux-3df) "email" ::one
-  #(println "eauau" %))
-
-(df/listen!
-  (.-conn crux-3df) "on-all"
-  #(println "eauau" %))
-
-(df/listen-query!
-  (.-conn crux-3df) "email2" ::one
-  #(println "eauau" %))
 
 (comment
   (pp/pprint crux-3df)

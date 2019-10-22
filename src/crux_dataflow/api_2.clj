@@ -128,7 +128,6 @@
 
 (defn query-full-results [crux-node query]
   (let [fr-query (assoc query :full-results? true)]
-    ; todo further query mods to extract all entities
     (mapv first (api/q (api/db crux-node) fr-query))))
 
 (defn transact-data-for-query!
