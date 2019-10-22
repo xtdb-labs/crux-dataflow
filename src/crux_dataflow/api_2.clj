@@ -67,7 +67,7 @@
                             (take batch-size)
                             (reduce
                              (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                               (ingest/upload-crux-tx-to-3df crux-node conn df-db schema tx-log-entry)
+                               (ingest/upload-single-crux-tx-to-3df crux-node conn df-db schema tx-log-entry)
                                tx-id)
                              tx-id)))]
       (when (= last-tx-id tx-id)

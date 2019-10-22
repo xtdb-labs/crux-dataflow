@@ -61,7 +61,7 @@
      :user/name "Patrik"
    ; :user/knows [:ids/bart] ; fixme may not index properly
      :user/likes ["apples" "daples"]
-     :user/email "ojweojwjeofijwi"}]])
+     :user/email "ojifiwjfoweijfweofijwi"}]])
 
 (dataflow/transact-data-for-query!
   crux-3df

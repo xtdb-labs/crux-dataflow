@@ -5,7 +5,6 @@
             [crux-dataflow.schema :as schema]
             [clj-3df.core :as df]))
 
-
 (defn calc-changed-triplets [eid-3df schema old-doc new-doc]
   (vec
     (apply
@@ -26,44 +25,54 @@
                   :when (not (contains? old-set new))]
               [:db/add eid-3df k (schema/maybe-encode-id schema k new)])))))))
 
-(defn- process-put
+(defn- process-put-doc
   "submits docs in put tx"
   ; todo possibly select part of the doc matching schema
-  [schema crux-db snapshot acc doc-or-id
+  [schema crux-db snapshot acc new-doc
    {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx-log-entry-w-doc}]
-  ;
-  (if-not (schema/matches-schema? schema doc-or-id)
-    (do (log/debug "DOC DOESN'T MATCH SCHEMA, SKIPPING:" (pr-str doc-or-id))
-        acc)
-    (let [new-doc doc-or-id
-          _ (log/debug "NEW-DOC:" (pr-str new-doc))
-          eid (:crux.db/id new-doc)
-          eid-3df (schema/encode-id eid)
-          old-doc (some->> (api/history-descending crux-db snapshot eid)
-                           ;; NOTE: This comment seems like a potential bug?
-                           ;; history-descending inconsistently includes the current document
-                           ;; sometimes (on first transaction attleast
-                           (filter
-                            (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
-                           first :crux.db/doc)
-          _ (log/debug "OLD-DOC:" (pr-str old-doc))
-          doc-changed-triplets (calc-changed-triplets eid-3df schema old-doc new-doc)]
-      (into acc doc-changed-triplets))))
+  (let [_ (log/debug "NEW-DOC:" (pr-str new-doc))
+        eid (:crux.db/id new-doc)
+        eid-3df (schema/encode-id eid)
+        old-doc (some->> (api/history-descending crux-db snapshot eid)
+                         ;; NOTE: This comment seems like a potential bug?
+                         ;; history-descending inconsistently includes the current document
+                         ;; sometimes (on first transaction attleast
+                         (filter
+                          (fn [entry] (not= (:crux.tx/tx-id entry) tx-id)))
+                         first :crux.db/doc)
+        _ (log/debug "OLD-DOC:" (pr-str old-doc))
+        doc-changed-triplets (calc-changed-triplets eid-3df schema old-doc new-doc)]
+    (into acc doc-changed-triplets)))
 
-(defn upload-crux-tx-to-3df
+(defn- sanitise-tx-ops [schema tx-ops]
+  (reduce
+    (fn [acc [tx-type doc-or-id :as tx-op]]
+      (case tx-type
+        :crux.tx/put
+        (if (and (map? doc-or-id) (schema/matches-schema? schema doc-or-id))
+          (conj acc tx-op)
+          acc)
+        acc))
+    []
+    tx-ops))
+
+(defn upload-single-crux-tx-to-3df
   [crux-node conn df-db schema {:keys [crux.api/tx-ops crux.tx/tx-time crux.tx/tx-id] :as tx}]
   (log/debug "CRUX_TX:" (pr-str tx))
-  (let [crux-db (api/db crux-node tx-time tx-time)]
+  (let [crux-db (api/db crux-node tx-time tx-time)
+        clean-tx-ops (sanitise-tx-ops schema tx-ops)]
     (with-open [snapshot (api/new-snapshot crux-db)]
-      (let [new-transaction
+      (let [new-df-txes
             (reduce
-             (fn [acc [op-key doc-or-id]]
-               (case op-key
-                 :crux.tx/put (process-put schema crux-db snapshot acc doc-or-id tx)))
-             []
-             tx-ops)]
-        (log/debug "3DF Tx:" (pr-str new-transaction))
-        @(df/exec! conn (df/transact df-db new-transaction))))))
+              (fn [acc [tx-type doc-or-id]]
+                (case tx-type
+                  :crux.tx/put (process-put-doc schema crux-db snapshot acc doc-or-id tx)
+                  acc))
+              []
+              clean-tx-ops)]
+        (when (not-empty new-df-txes)
+          (log/debug "3DF Tx:" (pr-str new-df-txes))
+          @(df/exec! conn (df/transact df-db new-df-txes)))))))
 
 (defn upload-crux-query-results
   [{:keys [conn df-db crux-node schema] :as df-listener}
@@ -74,28 +83,21 @@
 
 
 (assert
+  (schema/matches-schema?
+    schema/test-schema
+    {:crux.db/id :ids/pat :user/name "pat"}))
+
+(assert
+  (= [[:crux.tx/put {:crux.db/id :ids/pat :user/name "pat"}]]
+     (sanitise-tx-ops schema/test-schema
+                      [[:crux.tx/put {:crux.db/id :ids/pat :user/name "pat"}]
+                       [:crux.tx/put #crux/id "7cd3351653ab62a4c69c7fa7e45837d092d3e4de"]
+                       [:crux.tx/evict :ids/pat]])))
+
+(assert
   (let [args1
         ["#crux/id :katrik"
-         #:user{:name {:db/valueType :String,
-                       :query_support "AdaptiveWCO",
-                       :index_direction "Both",
-                       :input_semantics "CardinalityOne",
-                       :trace_slack {:TxId 1}},
-                :email {:db/valueType :String,
-                        :query_support "AdaptiveWCO",
-                        :index_direction "Both",
-                        :input_semantics "CardinalityOne",
-                        :trace_slack {:TxId 1}},
-                :knows {:db/valueType :Eid,
-                        :query_support "AdaptiveWCO",
-                        :index_direction "Both",
-                        :input_semantics "CardinalityMany",
-                        :trace_slack {:TxId 1}},
-                :likes {:db/valueType :String,
-                        :query_support "AdaptiveWCO",
-                        :index_direction "Both",
-                        :input_semantics "CardinalityMany",
-                        :trace_slack {:TxId 1}}}
+         schema/test-schema
          {:crux.db/id :katrik,
           :user/name "katrik",
           :user/likes ["apples" "daples"],

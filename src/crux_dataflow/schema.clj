@@ -6,6 +6,28 @@
             [crux-dataflow.misc-helpers :as fm])
   (:import (java.util Date)))
 
+(def test-schema
+  #:user{:name {:db/valueType :String,
+                :query_support "AdaptiveWCO",
+                :index_direction "Both",
+                :input_semantics "CardinalityOne",
+                :trace_slack {:TxId 1}},
+         :email {:db/valueType :String,
+                 :query_support "AdaptiveWCO",
+                 :index_direction "Both",
+                 :input_semantics "CardinalityOne",
+                 :trace_slack {:TxId 1}},
+         :knows {:db/valueType :Eid,
+                 :query_support "AdaptiveWCO",
+                 :index_direction "Both",
+                 :input_semantics "CardinalityMany",
+                 :trace_slack {:TxId 1}},
+         :likes {:db/valueType :String,
+                 :query_support "AdaptiveWCO",
+                 :index_direction "Both",
+                 :input_semantics "CardinalityMany",
+                 :trace_slack {:TxId 1}}})
+
 (defn- validate-value-type! [value-type v]
   (assert
     (case value-type
@@ -99,26 +121,7 @@
       :user/likes ["apples" "daples"],
       :user/email "iifojweiwei",
       :db/id "#crux/id :patrik"}
-     (let [args [#:user{:name {:db/valueType :String,
-                               :query_support "AdaptiveWCO",
-                               :index_direction "Both",
-                               :input_semantics "CardinalityMany",
-                               :trace_slack {:TxId 1}},
-                        :email {:db/valueType :String,
-                                :query_support "AdaptiveWCO",
-                                :index_direction "Both",
-                                :input_semantics "CardinalityMany",
-                                :trace_slack {:TxId 1}},
-                        :knows {:db/valueType :Eid,
-                                :query_support "AdaptiveWCO",
-                                :index_direction "Both",
-                                :input_semantics "CardinalityMany",
-                                :trace_slack {:TxId 1}},
-                        :likes {:db/valueType :String,
-                                :query_support "AdaptiveWCO",
-                                :index_direction "Both",
-                                :input_semantics "CardinalityMany",
-                                :trace_slack {:TxId 1}}}
+     (let [args [test-schema
                  {:crux.db/id :patrik,
                   :user/name "Patrik",
                   :user/knows [:ids/bart],
