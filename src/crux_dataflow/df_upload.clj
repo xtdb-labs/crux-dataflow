@@ -3,7 +3,8 @@
             [crux.api :as api]
             [clojure.test]
             [crux-dataflow.schema :as schema]
-            [clj-3df.core :as df]))
+            [clj-3df.core :as df]
+            [clojure.pprint :as pp]))
 
 
 (defn calc-changed-triplets [eid-3df schema old-doc new-doc]
@@ -68,7 +69,8 @@
 (defn upload-crux-query-results
   [{:keys [conn df-db crux-node schema] :as df-listener}
    crux-query-results]
-  (let [df-compatible-maps (mapv schema/prepare-map-for-3df crux-query-results)]
+  (let [df-compatible-maps (mapv (partial schema/prepare-map-for-3df schema) crux-query-results)]
+    (pp/pprint df-compatible-maps)
     @(df/exec! conn (df/transact df-db df-compatible-maps))))
 
 

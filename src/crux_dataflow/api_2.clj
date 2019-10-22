@@ -126,20 +126,26 @@
       (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
       (.put queue tuples))))
 
+(defn query-full-results [crux-node query]
+  (let [fr-query (assoc query :full-results? true)]
+    ; todo further query mods to extract all entities
+    (mapv first (api/q (api/db crux-node) fr-query))))
+
+(defn transact-data-for-query!
+  [{:keys [crux-node] :as df-listener} query]
+  (let [results (query-full-results crux-node query)]
+    (ingest/upload-crux-query-results df-listener results)))
+
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
   [{:keys [conn df-db crux-node schema] :as df-listener}
    {:crux.dataflow/keys [sub-id query query-name]}]
   (let [query--prepared (schema/prepare-query schema query)
         query-name (or query-name (map-query-to-id! query--prepared))
-        fr-query (assoc query :full-results? true)
-        results (api/q (api/db crux-node) fr-query)
-        _ (println :up fr-query)
-        _ (println :res results)
         queue (LinkedBlockingQueue.)]
-    (ingest/upload-crux-query-results df-listener (vec results))
-    (df/listen-query! conn query-name sub-id (mk-listener query-name queue))
+    (transact-data-for-query! df-listener query)
     (submit-query! df-listener query-name query--prepared)
+    (df/listen-query! conn query-name sub-id (mk-listener query-name queue))
     queue))
 
 (defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]
