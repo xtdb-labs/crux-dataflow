@@ -14,7 +14,8 @@
     [crux-dataflow.df-upload :as ingest]
     [clojure.pprint :as pp])
   (:import java.io.Closeable
-           [java.util.concurrent LinkedBlockingQueue]))
+           [java.util.concurrent LinkedBlockingQueue]
+           (clojure.lang IPersistentCollection)))
 
 
 (def ^:private query->name (atom {}))
@@ -133,46 +134,80 @@
 
 (comment
   ["two"
-   (([{:string "pafoewijfewoijfwehhhhh"} {:string "hofiewjoiwef"}]
-     {:txid 19}
+   (([{:String "pafoewijfewoijfwehhhhh"} {:String "hofiewjoiwef"}]
+     {:TxId 19}
      1)
-    ([{:string "pafoewijfewoijfwehhhhh"} {:string "hofijoiwef"}]
-     {:txid 19}
+    ([{:String "pafoewijfewoijfwehhhhh"} {:String "hofijoiwef"}]
+     {:TxId 19}
      3)
-    ([{:string "pak"} {:string "hofiewjoiwef"}] {:txid 19} -1)
-    ([{:string "pak"} {:string "hofijoiwef"}] {:txid 19} -3))])
+    ([{:String "pak"} {:String "hofiewjoiwef"}] {:TxId 19} -1)
+    ([{:String "pak"} {:String "hofijoiwef"}] {:TxId 19} -3))])
 
 (def raw-res
-  (([{:string "pafoewijfewoijfwehhhhh"} {:string "hofiewjoiwef"}]
-    {:txid 19}
-    1)
-   ([{:string "pafoewijfewoijfwehhhhh"} {:string "hofijoiwef"}]
-    {:txid 19}
-    3)
-   ([{:string "pak"} {:string "hofiewjoiwef"}] {:txid 19} -1)
-   ([{:string "pak"} {:string "hofijoiwef"}] {:txid 19} -3)))
+  [[[{:String "pafoewijfewoijfwehhhhh"} {:String "hofiewjoiwef"}]
+    {:TxId 19}
+    1]
+   [[{:String "pafoewijfewoijfwehhhhh"} {:String "hofijoiwef"}]
+    {:TxId 19}
+    3]
+   [[{:String "pak"} {:String "hofiewjoiwef"}] {:TxId 19} -1]
+   [[{:String "pak"} {:String "hofijoiwef"}] {:TxId 19} -3]])
 
-(->> (group-by second raw-res)
-     (sort-by (comp :TxId key)))
+(->> (group-by (comp :TxId second) raw-res)
+     (sort-by key))
+; (1) yields
+(def df-triplet-batches
+  [[19
+    [[[{:String "pafoewijfewoijfwehhhhh"} {:String "hofiewjoiwef"}] {:TxId 19} 1]
+     [[{:String "pafoewijfewoijfwehhhhh"} {:String "hofijoiwef"}] {:TxId 19} 3] ; addition triplet
+     [[{:String "pak"} {:String "hofiewjoiwef"}] {:TxId 19} -1] ; retraction triplet
+     [[{:String "pak"} {:String "hofijoiwef"}] {:TxId 19} -3]]]])
+
+(defn- df-triplet-type [[_ _ ^Long cardinality-delta :as df-diff-tuple]]
+  (if (> cardinality-delta 0)
+    :crux.df/added
+    :crux.df/deleted))
+
+(defn decode-tuple-values [tuple-values]
+  (mapv dfe/decode-value tuple-values))
+
+
+(defn shape-batch--vector [schema query tx-id triplets-batch]
+  (->> triplets-batch
+       (group-by df-triplet-type)
+       (fm/map-values #(mapv (comp decode-tuple-values first) %))))
+
+(assert
+  (= {:crux.df/added [["pafoewijfewoijfwehhhhh" "hofiewjoiwef"]
+                      ["pafoewijfewoijfwehhhhh" "hofijoiwef"]],
+      :crux.df/deleted [["pak" "hofiewjoiwef"] ["pak" "hofijoiwef"]]}
+     (shape-batch--vector
+       schema/test-schema
+       '{:find [?name ?email]
+         :where
+         [[?user :user/name ?name]
+          [?user :user/email ?email]]}
+       19
+       [[[{:String "pafoewijfewoijfwehhhhh"} {:String "hofiewjoiwef"}] {:TxId 19} 1]
+        [[{:String "pafoewijfewoijfwehhhhh"} {:String "hofijoiwef"}] {:TxId 19} 3]
+        [[{:String "pak"} {:String "hofiewjoiwef"}] {:TxId 19} -1]
+        [[{:String "pak"} {:String "hofijoiwef"}] {:TxId 19} -3]])))
 
 (defn- mk-listener--shaping
-  [query-name
+  [schema
+   query-name
    {:crux.dataflow/keys [query]}
    queue]
   (fn on-3df-message [results]
     (log/debug "RESULTS" query-name (fm/pp-str results))
-    (let [decoded-results (schema/decode-result-ids results)
-          tuples
-          (->> (for [[tx tx-results] (->> (group-by second decoded-results)
-                                          (sort-by (comp :TxId key)))
-                     :let [tuples (for [[t tx maybe-a-tx-delta] tx-results
-                                        :when (> 0 maybe-a-tx-delta)]
-                                    (mapv dfe/decode-value t))]
-                     :when (seq tuples)]
-                 [(:TxId tx) (vec tuples)])
-               (into (sorted-map)))]
-      (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
-      (.put queue tuples))))
+    (let [ordered-result-triplets ; (1)
+          (->> (group-by (comp :TxId second) results)
+               (sort-by key))
+          shaped-results-by-tx
+          (for [[tx-id triplets-batch] ordered-result-triplets]
+            (shape-batch--vector schema query, tx-id triplets-batch))]
+      (doseq [diff-op shaped-results-by-tx]
+        (.put queue diff-op)))))
 
 (defn query-entities [crux-node query]
   (let [fr-query (q-alt/entities-grabbing-alteration query)]
@@ -192,7 +227,7 @@
         queue (LinkedBlockingQueue.)]
     (transact-data-for-query! df-listener query)
     (submit-query! df-listener query-name query--prepared)
-    (df/listen-query! conn query-name sub-id (mk-listener--shaping query-name opts queue))
+    (df/listen-query! conn query-name sub-id (mk-listener--shaping schema query-name opts queue))
     queue))
 
 (defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]
