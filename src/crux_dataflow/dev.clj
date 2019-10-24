@@ -36,7 +36,7 @@
      :crux.dataflow/embed-server?     false}))
 
 (def ^LinkedBlockingQueue sub1
-  (dataflow/subscribe-query! crux-3df
+  (dataflow/subscribe-query! crux-3df ; seems like ingests trigger updates
     {:crux.dataflow/sub-id ::one
      :crux.dataflow/query-name "one"
      :crux.dataflow/query
@@ -45,21 +45,25 @@
        [[?user :user/name "Patrik"]
         [?user :user/email ?email]]}}))
 
-(.poll sub1)
-
-; poll worked just once
-
 (api/submit-tx node
   [[:crux.tx/put
     {:crux.db/id :patrik
      :user/name  "Patrik"
-     ; :user/knows [:ids/bart] ; fixme may not index properly
-     ; :user/likes ["apples" "daples"] ; fixme fails to accept seqs
-     :user/email "ojelji"}]])
+     :user/email "hofiewjfoiwef"}]])
+
+(.poll sub1)
 
 
 (comment
   (pp/pprint crux-3df)
+
+  (api/submit-tx node
+     [[:crux.tx/put
+       {:crux.db/id :patrik
+        :user/name  "Patrik"
+        ; :user/knows [:ids/bart] ; fixme may not index properly
+        ; :user/likes ["apples" "daples"] ; fixme fails to accept seqs
+        :user/email "eiowefojhhhh"}]])
 
   (pp/pprint @(:query-listeners (.-conn crux-3df)))
 

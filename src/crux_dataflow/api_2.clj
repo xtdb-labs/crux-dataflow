@@ -130,7 +130,6 @@
 
 (defn query-entities [crux-node query]
   (let [fr-query (q-alt/entities-grabbing-alteration query)]
-    (pp/pprint fr-query)
     (mapv first (api/q (api/db crux-node) fr-query))))
 
 (defn transact-data-for-query!
@@ -140,7 +139,7 @@
 
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
-  [{:keys [conn df-db crux-node schema] :as df-listener}
+  [{:keys [conn schema] :as df-listener}
    {:crux.dataflow/keys [sub-id query query-name]}]
   (let [query--prepared (schema/prepare-query schema query)
         query-name (or query-name (map-query-to-id! query--prepared))

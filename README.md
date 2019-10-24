@@ -72,7 +72,10 @@ But only 1500ms for a batch of size 500
 - [*] transact in only required query data
 - [*] transact in full results data, so better query modification
 
+- [ ] fix query
+
 - [ ] query data pull shapes
+
 - [ ] collection values ser / deser
 
 - [ ] ingest transact in entities bindings from rules
