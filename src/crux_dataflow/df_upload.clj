@@ -13,13 +13,15 @@
             :when (not= k :crux.db/id)]
         (let [old-val (get old-doc k)
               new-val (get new-doc k)
+              attr-conf (get schema k)
               old-set (when (not (nil? old-val)) (if (coll? old-val) (set old-val) #{old-val}))
               new-set (when (not (nil? new-val)) (if (coll? new-val) (set new-val) #{new-val}))]
           (concat
-            (for [old old-set
-                  :when (not (nil? old))
-                  :when (not (contains? new-set old))]
-              [:db/retract eid-3df k (schema/maybe-encode-id schema k old)])
+            (if-not (schema/attr-is-card-one? attr-conf)
+              (for [old old-set
+                    :when (not (nil? old))
+                    :when (not (contains? new-set old))]
+                [:db/retract eid-3df k (schema/maybe-encode-id schema k old)]))
             (for [new new-set
                   :when (not (nil? new))
                   :when (not (contains? old-set new))]
@@ -106,6 +108,5 @@
           :user/name "katrik",
           :user/likes ["apples" "daples"],
           :user/email "iwefoiiejfewfj"}]]
-    (= [[:db/retract "#crux/id :katrik" :user/email "iwefoiiejfoiewfj"]
-        [:db/add "#crux/id :katrik" :user/email "iwefoiiejfewfj"]]
+    (= [[:db/add "#crux/id :katrik" :user/email "iwefoiiejfewfj"]]
        (apply calc-changed-triplets args1))))

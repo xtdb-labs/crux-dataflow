@@ -38,18 +38,18 @@
 (def ^LinkedBlockingQueue sub1
   (dataflow/subscribe-query! crux-3df ; seems like ingests trigger updates
     {:crux.dataflow/sub-id ::one
-     :crux.dataflow/query-name "one"
+     :crux.dataflow/query-name "two"
      :crux.dataflow/query
-     '{:find [?email]
+     '{:find [?name ?email]
        :where
-       [[?user :user/name "Patrik"]
+       [[?user :user/name ?name]
         [?user :user/email ?email]]}}))
 
 (api/submit-tx node
   [[:crux.tx/put
     {:crux.db/id :patrik
-     :user/name  "Patrik"
-     :user/email "hofiewjfoiwef"}]])
+     :user/name  "Poefewoifxxhh"
+     :user/email "hofijwefojo"}]])
 
 (.poll sub1)
 

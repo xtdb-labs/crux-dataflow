@@ -114,7 +114,10 @@
               (select-keys query-prepared [:find :where])
               (get query-prepared :rules []))))
 
-(defn- mk-listener [query-name queue]
+(defn- mk-listener--raw
+  [query-name
+   {:crux.dataflow/keys [query]}
+   queue]
   (fn on-3df-message [results]
     (log/debug "RESULTS" query-name results)
     (let [tuples (->> (for [[tx tx-results] (->> (group-by second (schema/decode-result-ids results))
@@ -125,6 +128,49 @@
                             :when (seq tuples)]
                         [(:TxId tx) (vec tuples)])
                       (into (sorted-map)))]
+      (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
+      (.put queue tuples))))
+
+(comment
+  ["two"
+   (([{:string "pafoewijfewoijfwehhhhh"} {:string "hofiewjoiwef"}]
+     {:txid 19}
+     1)
+    ([{:string "pafoewijfewoijfwehhhhh"} {:string "hofijoiwef"}]
+     {:txid 19}
+     3)
+    ([{:string "pak"} {:string "hofiewjoiwef"}] {:txid 19} -1)
+    ([{:string "pak"} {:string "hofijoiwef"}] {:txid 19} -3))])
+
+(def raw-res
+  (([{:string "pafoewijfewoijfwehhhhh"} {:string "hofiewjoiwef"}]
+    {:txid 19}
+    1)
+   ([{:string "pafoewijfewoijfwehhhhh"} {:string "hofijoiwef"}]
+    {:txid 19}
+    3)
+   ([{:string "pak"} {:string "hofiewjoiwef"}] {:txid 19} -1)
+   ([{:string "pak"} {:string "hofijoiwef"}] {:txid 19} -3)))
+
+(->> (group-by second raw-res)
+     (sort-by (comp :TxId key)))
+
+(defn- mk-listener--shaping
+  [query-name
+   {:crux.dataflow/keys [query]}
+   queue]
+  (fn on-3df-message [results]
+    (log/debug "RESULTS" query-name (fm/pp-str results))
+    (let [decoded-results (schema/decode-result-ids results)
+          tuples
+          (->> (for [[tx tx-results] (->> (group-by second decoded-results)
+                                          (sort-by (comp :TxId key)))
+                     :let [tuples (for [[t tx maybe-a-tx-delta] tx-results
+                                        :when (> 0 maybe-a-tx-delta)]
+                                    (mapv dfe/decode-value t))]
+                     :when (seq tuples)]
+                 [(:TxId tx) (vec tuples)])
+               (into (sorted-map)))]
       (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
       (.put queue tuples))))
 
@@ -140,13 +186,13 @@
 (defn subscribe-query!
   ^java.util.concurrent.BlockingQueue
   [{:keys [conn schema] :as df-listener}
-   {:crux.dataflow/keys [sub-id query query-name]}]
+   {:crux.dataflow/keys [sub-id query query-name] :as opts}]
   (let [query--prepared (schema/prepare-query schema query)
         query-name (or query-name (map-query-to-id! query--prepared))
         queue (LinkedBlockingQueue.)]
     (transact-data-for-query! df-listener query)
     (submit-query! df-listener query-name query--prepared)
-    (df/listen-query! conn query-name sub-id (mk-listener query-name queue))
+    (df/listen-query! conn query-name sub-id (mk-listener--shaping query-name opts queue))
     queue))
 
 (defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]

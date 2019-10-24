@@ -46,6 +46,10 @@
       :Real (float? v))
     (str "Invalid value type: " value-type " " (pr-str v))))
 
+(defn attr-is-card-one? [attr-conf]
+  (= "CardinalityOne" (:input_semantics attr-conf)))
+
+
 (defn- attr-def [attr-type & [collection-type opts]]
   (merge
     (if collection-type
@@ -53,7 +57,7 @@
     (attribute/of-type attr-type)
     (attribute/input-semantics (if (= ::set collection-type)
                                  :db.semantics.cardinality/many
-                                 :db.semantics/raw))
+                                 :db.semantics.cardinality/one))
     (attribute/tx-time)))
 
 ; Raw
@@ -110,8 +114,8 @@
 (defn- maybe-decode-id [v]
   (if (string? v)
     (try
-      (read-string v)
-      (catch Exception e v))
+      (c/read-edn-string-with-readers v)
+      (catch Exception _ v))
     v))
 
 (defn encode-query-ids [schema clauses]
@@ -169,12 +173,12 @@
   (= #:user{:email {:db/valueType :String,
                     :query_support "AdaptiveWCO",
                     :index_direction "Both",
-                    :input_semantics "Raw",
+                    :input_semantics "CardinalityOne",
                     :trace_slack {:TxId 1}},
             :name {:db/valueType :String,
                    :query_support "AdaptiveWCO",
                    :index_direction "Both",
-                   :input_semantics "Raw",
+                   :input_semantics "CardinalityOne",
                    :trace_slack {:TxId 1}},
             :knows {:crux-dataflow.schema/collection-type :crux-dataflow.schema/set,
                     :db/valueType :Eid,
