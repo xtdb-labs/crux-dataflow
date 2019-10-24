@@ -6,11 +6,13 @@
     [clj-3df.encode :as dfe]
     [manifold.stream]
     [crux.api :as api]
+    [crux-dataflow.query-altering :as q-alt]
     [crux-dataflow.server-connect :as srv-conn]
     [crux-dataflow.schema :as schema]
     [crux-dataflow.crux-helpers :as f]
     [crux-dataflow.misc-helpers :as fm]
-    [crux-dataflow.df-upload :as ingest])
+    [crux-dataflow.df-upload :as ingest]
+    [clojure.pprint :as pp])
   (:import java.io.Closeable
            [java.util.concurrent LinkedBlockingQueue]))
 
@@ -126,13 +128,14 @@
       (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
       (.put queue tuples))))
 
-(defn query-full-results [crux-node query]
-  (let [fr-query (assoc query :full-results? true)]
+(defn query-entities [crux-node query]
+  (let [fr-query (q-alt/entities-grabbing-alteration query)]
+    (pp/pprint fr-query)
     (mapv first (api/q (api/db crux-node) fr-query))))
 
 (defn transact-data-for-query!
   [{:keys [crux-node] :as df-listener} query]
-  (let [results (query-full-results crux-node query)]
+  (let [results (query-entities crux-node query)]
     (ingest/upload-crux-query-results df-listener results)))
 
 (defn subscribe-query!

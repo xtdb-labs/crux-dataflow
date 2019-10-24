@@ -6,7 +6,6 @@
     [crux-dataflow.schema :as schema])
   (:import (java.util.concurrent LinkedBlockingQueue)))
 
-
 (def task-schema
   (schema/inflate
     {:task/owner [:Eid]
@@ -47,6 +46,7 @@
         [?user :user/email ?email]]}}))
 
 (.poll sub1)
+
 ; poll worked just once
 
 (api/submit-tx node
@@ -55,14 +55,7 @@
      :user/name  "Patrik"
      ; :user/knows [:ids/bart] ; fixme may not index properly
      ; :user/likes ["apples" "daples"] ; fixme fails to accept seqs
-     :user/email "ojwelfjelfkweifwjji"}]])
-
-(dataflow/transact-data-for-query!
-  crux-3df
- '{:find [?user]
-   :where
-   [[?user :user/name "Patrik"]
-    [?user :user/email ?email]]})
+     :user/email "ojelji"}]])
 
 
 (comment
