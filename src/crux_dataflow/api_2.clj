@@ -9,13 +9,12 @@
     [crux-dataflow.query-altering :as q-alt]
     [crux-dataflow.server-connect :as srv-conn]
     [crux-dataflow.schema :as schema]
-    [crux-dataflow.crux-helpers :as f]
+    [crux-dataflow.df-consumer :as df-consumer]
     [crux-dataflow.misc-helpers :as fm]
-    [crux-dataflow.df-upload :as ingest]
-    [clojure.pprint :as pp])
+    [crux-dataflow.df-upload :as ingest])
   (:import java.io.Closeable
            [java.util.concurrent LinkedBlockingQueue]
-           (clojure.lang IPersistentCollection)))
+           (clojure.lang Atom)))
 
 
 (def ^:private query->name (atom {}))
@@ -29,11 +28,11 @@
 
 
 (defrecord CruxDataflowTxListener
-  [conn df-db crux-node schema ^Thread worker-thread ^Process server-process]
+  [conn df-db crux-node schema ^Atom worker-thread ^Process server-process]
   Closeable
   (close [_]
     (manifold.stream/close! (:ws conn))
-    (doto worker-thread
+    (doto @worker-thread
       (.interrupt)
       (.join))
     (when server-process
@@ -48,45 +47,27 @@
 (s/def :crux.dataflow/debug-connection? boolean?)
 (s/def :crux.dataflow/embed-server? boolean?)
 
-(s/def :crux.dataflow/tx-listener-options (s/keys :req [:crux.dataflow/schema]
-                                                  :opt [:crux.dataflow/url
-                                                        :crux.dataflow/poll-interval
-                                                        :crux.dataflow/batch-size
-                                                        :crux.dataflow/debug-connection?
-                                                        :crux.dataflow/embed-server?]))
-
-
-(defn- dataflow-consumer
-  [crux-node conn df-db from-tx-id
-   {:crux.dataflow/keys [schema
-                         poll-interval
-                         batch-size]
-               :or {poll-interval 100
-                    batch-size 1000}
-               :as options}]
-  (loop [tx-id from-tx-id]
-    (let [last-tx-id (with-open [tx-log-context (api/new-tx-log-context crux-node)]
-                       (->> (api/tx-log crux-node tx-log-context (inc tx-id) true)
-                            (take batch-size)
-                            (reduce
-                             (fn [_ {:keys [crux.tx/tx-id] :as tx-log-entry}]
-                               (ingest/upload-single-crux-tx-to-3df crux-node conn df-db schema tx-log-entry)
-                               tx-id)
-                             tx-id)))]
-      (when (= last-tx-id tx-id)
-        (Thread/sleep poll-interval))
-      (recur (long last-tx-id)))))
+(s/def :crux.dataflow/tx-listener-options
+  (s/keys :req [:crux.dataflow/schema]
+          :opt [:crux.dataflow/url
+                :crux.dataflow/poll-interval
+                :crux.dataflow/batch-size
+                :crux.dataflow/debug-connection?
+                :crux.dataflow/embed-server?]))
 
 (defn start-dataflow-tx-listener
-  ^java.io.Closeable [crux-node
-                      {:crux.dataflow/keys [schema
-                                            url
-                                            debug-connection?
-                                            embed-server?]
-                       :or {url srv-conn/default-dataflow-server-url
-                            debug-connection? false
-                            embed-server? false}
-                       :as options}]
+  ^Closeable
+  [crux-node
+   {:crux.dataflow/keys
+    [schema
+     restart-on-death?
+     url debug-connection? embed-server?]
+    :or {url srv-conn/default-dataflow-server-url
+         restart-on-death? true
+         debug-connection? false
+         embed-server? false}
+    :as options}]
+
   (s/assert :crux.dataflow/tx-listener-options options)
   (let [server-process (when embed-server?
                          (srv-conn/start-dataflow-server))
@@ -94,18 +75,21 @@
                 df/create-debug-conn!
                 df/create-conn!) url)
         df-db (df/create-db schema)
-        from-tx-id (inc (f/latest-tx-id crux-node))]
-    (df/exec! conn (df/create-db-inputs df-db))
-    (let [worker-thread (doto (Thread.
-                               #(try
-                                  (dataflow-consumer crux-node conn df-db from-tx-id options)
-                                  (catch InterruptedException ignore)
-                                  (catch Throwable t
-                                    (log/fatal t "Polling failed:"))))
-                          (.setName "crux-dataflow.worker-thread")
-                          (.start))]
-      (->CruxDataflowTxListener conn df-db crux-node schema worker-thread server-process))))
-
+        on-thread-death (atom nil)
+        _ (df/exec! conn (df/create-db-inputs df-db))
+        init-worker
+        (fn []
+          (let [wt (df-consumer/mk-worker crux-node conn df-db options on-thread-death)]
+            (.start wt)
+            wt))
+        worker-thread (atom (init-worker))
+        listener (->CruxDataflowTxListener conn df-db crux-node schema
+                                           worker-thread server-process)]
+    (if restart-on-death?
+      (reset! on-thread-death
+        #(do (log/info "Polling thread blew up. Perhaps #364? Restarting...")
+             (reset! worker-thread (init-worker)))))
+    listener))
 
 (defn submit-query! [{:keys [conn db schema] :as dataflow-tx-listener} query-name query-prepared]
   (df/exec! conn

@@ -4,7 +4,8 @@
     [crux-dataflow.api-2 :as dataflow]
     [clojure.pprint :as pp]
     [crux-dataflow.schema :as schema])
-  (:import (java.util.concurrent LinkedBlockingQueue)))
+  (:import (java.util.concurrent LinkedBlockingQueue)
+           (java.io Closeable)))
 
 (def task-schema
   (schema/inflate
@@ -28,12 +29,15 @@
      :crux.standalone/event-log-dir "data/eventlog"
      :crux.kv/db-dir "data/db-dir"}))
 
-(def crux-3df
-  (dataflow/start-dataflow-tx-listener ; todo restart connection
-    node
-    {:crux.dataflow/schema            (merge user-schema task-schema)
-     :crux.dataflow/debug-connection? true
-     :crux.dataflow/embed-server?     false}))
+(def ^Closeable crux-3df
+  (do
+    (if (bound? #'crux-3df)
+      (.close crux-3df))
+    (dataflow/start-dataflow-tx-listener
+      node
+      {:crux.dataflow/schema            (merge user-schema task-schema)
+       :crux.dataflow/debug-connection? true
+       :crux.dataflow/embed-server?     false})))
 
 (def ^LinkedBlockingQueue sub1
   (dataflow/subscribe-query! crux-3df ; seems like ingests trigger updates
@@ -48,8 +52,8 @@
 (api/submit-tx node
   [[:crux.tx/put
     {:crux.db/id :patrik
-     :user/name  "Poefewoifxxhh"
-     :user/email "hofijwefojo"}]])
+     :user/name  "4"
+     :user/email "4"}]])
 
 (.poll sub1)
 
