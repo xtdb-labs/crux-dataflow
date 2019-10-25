@@ -152,6 +152,42 @@
       (update :where #(encode-query-ids schema %))
       (update :rules #(encode-query-ids schema %))))
 
+(defn- assoc-entity-name [ent-key entity-schema]
+  (fm/map-values
+    #(assoc % :crux.dataflow/entity ent-key)
+    entity-schema))
+
+(defn calc-flat-schema [full-schema]
+  (apply merge (vals full-schema)))
+
+(defn calc-full-schema [schema]
+  (let [inflated (fm/map-values inflate schema)]
+    (fm/map-values assoc-entity-name inflated true)))
+
+(assert
+  (= {:user/name {:db/valueType :String,
+                  :query_support "AdaptiveWCO",
+                  :index_direction "Both",
+                  :input_semantics "CardinalityOne",
+                  :trace_slack {:TxId 1},
+                  :crux.dataflow/entity :user},
+      :user/email {:db/valueType :String,
+                   :query_support "AdaptiveWCO",
+                   :index_direction "Both",
+                   :input_semantics "CardinalityOne",
+                   :trace_slack {:TxId 1},
+                   :crux.dataflow/entity :user},
+      :task/title {:db/valueType :String,
+                   :query_support "AdaptiveWCO",
+                   :index_direction "Both",
+                   :input_semantics "CardinalityOne",
+                   :trace_slack {:TxId 1},
+                   :crux.dataflow/entity :task}})
+  (calc-flat-schema
+    (calc-full-schema
+      {:user {:user/name [:String]
+              :user/email [:String]}
+       :task {:task/title [:String]}})))
 
 (assert
   (= {:user/name "Patrik",
@@ -188,3 +224,4 @@
        {:user/email [:String]
         :user/name [:String]
         :user/knows [:Eid ::set]})))
+

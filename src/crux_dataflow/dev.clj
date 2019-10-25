@@ -16,18 +16,19 @@
     tx-data))
 
 (def task-schema
-  (schema/inflate
-    {:task/owner [:Eid]
-     :task/title [:String]
-     :task/content [:String]
-     :task/followers [:Eid ::schema/set]}))
+  {:task/owner [:Eid]
+   :task/title [:String]
+   :task/content [:String]
+   :task/followers [:Eid ::schema/set]})
 
 (def user-schema
-  (schema/inflate
-    {:user/name [:String]
-     :user/email [:String]
-     :user/knows [:Eid ::schema/set]
-     :user/likes [:String ::schema/list]}))
+  {:user/name [:String]
+   :user/email [:String]
+   :user/knows [:Eid ::schema/set]
+   :user/likes [:String ::schema/list]})
+
+(def full-schema
+  (schema/calc-full-schema {:user user-schema, :task task-schema}))
 
 (defonce node
   (api/start-node
@@ -43,7 +44,7 @@
       (.close crux-3df))
     (dataflow/start-dataflow-tx-listener
       node
-      {:crux.dataflow/schemas {:user user-schema, :task task-schema}
+      {:crux.dataflow/schema full-schema
        :crux.dataflow/debug-connection? true
        :crux.dataflow/embed-server?     false})))
 
@@ -60,7 +61,7 @@
 
 (def ^LinkedBlockingQueue sub2
   (dataflow/subscribe-query! crux-3df
-    {:crux.dataflow/sub-id ::one
+    {:crux.dataflow/sub-id ::two
      :crux.dataflow/query-name "user-todos"
      :crux.dataflow/results-shape :crux.dataflow.results-shape/maps
      :crux.dataflow/query
@@ -75,22 +76,14 @@
   [[:crux.tx/put
     {:crux.db/id :ids/patrik
      :user/name  "Pat"
-     :user/email "pat@pat.pat"}]
+     :user/email "pat@pat.pat7"}]
    [:crux.tx/put
     {:crux.db/id :ids.tasks/one
      :task/owner :ids/patrik
-     :task/title "Groceries"}]])
-
-(submit-sync
-  [[:crux.tx/put
-    {:crux.db/id :ids.tasks/one
-     :task/owner :ids/patrik
-     :task/title "Gceries"}]])
+     :task/title "Groceries 7"}]])
 
 (.poll sub1 10 TimeUnit/MILLISECONDS)
 (.poll sub2 10 TimeUnit/MILLISECONDS)
-
-
 
 (assert
   (= '{:find [?name ?email ?user-todo],
@@ -100,13 +93,13 @@
                [?task :task/title ?user-todo]],
        :rules nil}
      (schema/prepare-query
-       (merge user-schema task-schema)
+       (schema/calc-flat-schema full-schema)
        {:find ['?name '?email '?user-todo]
         :where
-              [['?user :user/name '?name]
-               ['?user :user/email '?email]
-               ['?task :task/owner  :ids/patrik]
-               ['?task :task/title '?user-todo]]})))
+        [['?user :user/name '?name]
+         ['?user :user/email '?email]
+         ['?task :task/owner  :ids/patrik]
+         ['?task :task/title '?user-todo]]})))
 
 
 (comment

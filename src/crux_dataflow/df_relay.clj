@@ -1,7 +1,9 @@
-(ns crux-dataflow.df-consumer
+(ns crux-dataflow.df-relay
+  "Consumes Crux tx-log, relays entries into Declarative Dataflow server"
   (:require [clojure.tools.logging :as log]
             [crux-dataflow.crux-helpers :as f]
             [crux-dataflow.df-upload :as ingest]
+            [crux-dataflow.schema :as schema]
             [crux.api :as api]
             [clojure.spec.alpha :as s]
             [crux-dataflow.server-connect :as srv-conn]
@@ -10,7 +12,9 @@
            (clojure.lang Atom)
            (java.io Closeable)))
 
-(defn- dataflow-consumer
+(def ^:private wc-counter (atom 0))
+
+(defn- relay-tx-log-to-3df
   [crux-node conn df-db from-tx-id
    {:crux.dataflow/keys [flat-schema
                          poll-interval
@@ -18,6 +22,8 @@
     :or {poll-interval 100
          batch-size 1000}
     :as options}]
+  ; perhaps we can submit bare tx-log entries without additional data
+  (log/debug "DF-RELAY" flat-schema)
   (loop [tx-id from-tx-id]
     (let [last-tx-id (with-open [tx-log-context (api/new-tx-log-context crux-node)]
                        (->> (api/tx-log crux-node tx-log-context (inc tx-id) true)
@@ -36,7 +42,7 @@
         payload
         (fn []
           (try
-            (dataflow-consumer crux-node conn df-db from-tx-id options)
+            (relay-tx-log-to-3df crux-node conn df-db from-tx-id options)
             (catch InterruptedException ignore)
             (catch Throwable t
               (log/fatal t "Polling failed:")
@@ -46,7 +52,7 @@
               (log/info "Dataflow consumer thread exiting"))))]
     (doto
       (Thread. payload)
-      (.setName "crux-dataflow.worker-thread"))))
+      (.setName (str "crux-dataflow.tx-consumer-thread-" (swap! wc-counter inc))))))
 
 
 (defrecord CruxDataflowTxListener
@@ -99,7 +105,8 @@
         conn ((if debug-connection?
                 df/create-debug-conn!
                 df/create-conn!) url)
-        flat-schema (apply merge (vals schema))
+        flat-schema (schema/calc-flat-schema schema)
+        options (assoc options :crux.dataflow/flat-schema flat-schema)
         df-db (df/create-db flat-schema)
         on-thread-death (atom nil)
         _ (df/exec! conn (df/create-db-inputs df-db))

@@ -7,7 +7,7 @@
     [crux.api :as api]
     [crux-dataflow.query-altering :as q-alt]
     [crux-dataflow.schema :as schema]
-    [crux-dataflow.df-consumer :as df-consumer]
+    [crux-dataflow.df-relay :as df-consumer]
     [crux-dataflow.misc-helpers :as fm]
     [crux-dataflow.df-upload :as ingest])
   (:import [java.util.concurrent LinkedBlockingQueue BlockingQueue]))
@@ -24,7 +24,7 @@
 
 (def start-dataflow-tx-listener df-consumer/start-dataflow-tx-listener)
 
-(defn- submit-query! [{:keys [conn db] :as dataflow-tx-listener} query-name query-prepared]
+(defn- submit-query! [{:keys [conn db] :as df-tx-listener} query-name query-prepared]
   (df/exec! conn
             (df/query
               db
@@ -87,7 +87,6 @@
 
 (defn- decode-tuple-values [tuple-values]
   (mapv dfe/decode-value tuple-values))
-
 
 (defn- shape-batch--vector [schema query tx-id triplets-batch]
   (->> triplets-batch
