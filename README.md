@@ -68,19 +68,20 @@ But only 1500ms for a batch of size 500
 
 ## TODO
 - [*] investigate the indexing bug with tx-log
+- [*] split subscription key and query key
 - [*] 3DF string/uuid ids
 - [*] transact in only required query data
 - [*] transact in full results data, so better query modification
+- [*] query data shape - vector
+- [*] polling failure resiliency
 
-- [ ] fix query
-
-- [ ] query data pull shapes
+- [ ] query data shape - map
+- [ ] automatic query keys
 
 - [ ] collection values ser / deser
 
 - [ ] ingest transact in entities bindings from rules
 - [ ] evict/delete/cas txs
-- [ ] split subscription key and query key
 
 optional
 - [ ] manage external 3df server processes?

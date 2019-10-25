@@ -78,34 +78,33 @@
     {}
     local-schema))
 
-(defn- validate-schema! [schema {:keys [crux.db/id] :as doc}]
+(defn- validate-schema! [flat-schema {:keys [crux.db/id] :as doc}]
   (assert (c/valid-id? id))
   (assert (map? doc))
   (doseq [[k v] (dissoc doc :crux.db/id)
-          :let [{:keys [db/valueType input_semantics]} (get schema k)]]
-    (assert (contains? schema k))
+          :let [{:keys [db/valueType input_semantics]} (get flat-schema k)]]
+    (assert (contains? flat-schema k))
     (if (coll? v)
       (doseq [item v]
         (validate-value-type! valueType item))
       (validate-value-type! valueType v))))
 
-(defn matches-schema? [schema doc]
+(defn matches-schema? [flat-schema doc]
   (try
-    (validate-schema! schema doc)
+    (validate-schema! flat-schema doc)
     true
     (catch AssertionError e
-      (log/debug e "Does not match schema:")
+      (log/debug e "Does not match flat-schema:")
       false)))
 
 (defn encode-id [v]
-  (assert (c/valid-id? v))
-  (if (or (string? v) (keyword? v))
+  (if (and (or (string? v) (keyword? v)) (c/valid-id? v))
     (str "#crux/id "(pr-str v))
     v)) ; todo case type
 
-(defn maybe-encode-id [schema attr-name v]
+(defn maybe-encode-id [flat-schema attr-name v]
   (if (and (or (= :crux.db/id attr-name)
-               (= :Eid (get-in schema [attr-name :db/valueType]))))
+               (= :Eid (get-in flat-schema [attr-name :db/valueType]))))
     (if (coll? v) ; todo check on maps
       (into (empty v) (map encode-id v))
       (encode-id v))
@@ -152,7 +151,6 @@
   (-> (q/normalize-query query)
       (update :where #(encode-query-ids schema %))
       (update :rules #(encode-query-ids schema %))))
-
 
 
 (assert

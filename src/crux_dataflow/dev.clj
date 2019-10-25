@@ -4,8 +4,16 @@
     [crux-dataflow.api-2 :as dataflow]
     [clojure.pprint :as pp]
     [crux-dataflow.schema :as schema])
-  (:import (java.util.concurrent LinkedBlockingQueue)
-           (java.io Closeable)))
+  (:import (java.util.concurrent LinkedBlockingQueue TimeUnit)
+           (java.io Closeable)
+           (java.time Duration)))
+
+(declare node)
+
+(defn- submit-sync [txes]
+  (let [tx-data (api/submit-tx node txes)]
+    (api/sync node (Duration/ofSeconds 20))
+    tx-data))
 
 (def task-schema
   (schema/inflate
@@ -35,27 +43,70 @@
       (.close crux-3df))
     (dataflow/start-dataflow-tx-listener
       node
-      {:crux.dataflow/schema            (merge user-schema task-schema)
+      {:crux.dataflow/schemas {:user user-schema, :task task-schema}
        :crux.dataflow/debug-connection? true
        :crux.dataflow/embed-server?     false})))
 
 (def ^LinkedBlockingQueue sub1
-  (dataflow/subscribe-query! crux-3df ; seems like ingests trigger updates
+  (dataflow/subscribe-query! crux-3df
     {:crux.dataflow/sub-id ::one
-     :crux.dataflow/query-name "two"
+     :crux.dataflow/query-name "user-email"
+     :crux.df/results-shape :crux.df.results-shape/tuples
      :crux.dataflow/query
-     '{:find [?name ?email]
-       :where
-       [[?user :user/name ?name]
-        [?user :user/email ?email]]}}))
+     {:find ['?name '?email]
+      :where
+      [['?user :user/name '?name]
+       ['?user :user/email '?email]]}}))
 
-(api/submit-tx node
+(def ^LinkedBlockingQueue sub2
+  (dataflow/subscribe-query! crux-3df
+    {:crux.dataflow/sub-id ::one
+     :crux.dataflow/query-name "user-todos"
+     :crux.dataflow/results-shape :crux.dataflow.results-shape/maps
+     :crux.dataflow/query
+     {:find ['?name '?email '?user-todo]
+      :where
+      [['?user :user/name '?name]
+       ['?user :user/email '?email]
+       ['?task :task/owner '?user]
+       ['?task :task/title '?user-todo]]}}))
+
+(submit-sync
   [[:crux.tx/put
-    {:crux.db/id :patrik
-     :user/name  "4"
-     :user/email "4"}]])
+    {:crux.db/id :ids/patrik
+     :user/name  "Pat"
+     :user/email "pat@pat.pat"}]
+   [:crux.tx/put
+    {:crux.db/id :ids.tasks/one
+     :task/owner :ids/patrik
+     :task/title "Groceries"}]])
 
-(.poll sub1)
+(submit-sync
+  [[:crux.tx/put
+    {:crux.db/id :ids.tasks/one
+     :task/owner :ids/patrik
+     :task/title "Gceries"}]])
+
+(.poll sub1 10 TimeUnit/MILLISECONDS)
+(.poll sub2 10 TimeUnit/MILLISECONDS)
+
+
+
+(assert
+  (= '{:find [?name ?email ?user-todo],
+       :where [[?user :user/name ?name]
+               [?user :user/email ?email]
+               [?task :task/owner "#crux/id :ids/patrik"]
+               [?task :task/title ?user-todo]],
+       :rules nil}
+     (schema/prepare-query
+       (merge user-schema task-schema)
+       {:find ['?name '?email '?user-todo]
+        :where
+              [['?user :user/name '?name]
+               ['?user :user/email '?email]
+               ['?task :task/owner  :ids/patrik]
+               ['?task :task/title '?user-todo]]})))
 
 
 (comment
