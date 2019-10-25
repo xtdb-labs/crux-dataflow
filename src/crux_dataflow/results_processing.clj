@@ -5,25 +5,10 @@
             [crux-dataflow.schema :as schema]
             [crux-dataflow.query-analysis :as qa]))
 
-(defn- mk-listener--raw
-  [query-name queue]
-  (fn on-3df-message [results]
-    (log/debug "RESULTS" query-name results)
-    (let [tuples (->> (for [[tx tx-results] (->> (group-by second (schema/decode-result-ids results))
-                                                 (sort-by (comp :TxId key)))
-                            :let [tuples (for [[t tx add-delete] tx-results
-                                               :when (= 1 add-delete)]
-                                           (mapv dfe/decode-value t))]
-                            :when (seq tuples)]
-                        [(:TxId tx) (vec tuples)])
-                      (into (sorted-map)))]
-      (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
-      (.put queue tuples))))
-
 (defn- df-triplet-type [[_ _ ^Long cardinality-delta :as df-diff-tuple]]
   (if (> cardinality-delta 0)
-    :crux.dataflow/added
-    :crux.dataflow/deleted))
+    :updated-props
+    :deleted-props))
 
 (defn- decode-tuple-value [tuple-value]
   (if-let [eid (:Eid tuple-value)]
@@ -57,6 +42,21 @@
          (group-by df-triplet-type)
          (fm/map-values triplet-group-map))))
 
+(defn mk-listener--raw
+  [query-name queue]
+  (fn on-3df-message [results]
+    (log/debug "RESULTS" query-name results)
+    (let [tuples (->> (for [[tx tx-results] (->> (group-by second (schema/decode-result-ids results))
+                                                 (sort-by (comp :TxId key)))
+                            :let [tuples (for [[t tx add-delete] tx-results
+                                               :when (= 1 add-delete)]
+                                           (mapv dfe/decode-value t))]
+                            :when (seq tuples)]
+                        [(:TxId tx) (vec tuples)])
+                      (into (sorted-map)))]
+      (log/debug query-name "updated:" (pr-str results) "tuples:" (pr-str tuples))
+      (.put queue tuples))))
+
 (defn mk-listener--shaping
   [flat-schema schema query-name dst-queue
    {:crux.dataflow/keys [results-shape] :as opts}]
@@ -76,9 +76,9 @@
 
 ; ----- basic tests -----
 (assert
-  (= {:crux.dataflow/added   [["pafoewijfewoijfwehhhhh" "hofiewjoiwef"]
-                              ["pafoewijfewoijfwehhhhh" "hofijoiwef"]],
-      :crux.dataflow/deleted [["pak" "hofiewjoiwef"] ["pak" "hofijoiwef"]]}
+  (= {:updated-props   [["pafoewijfewoijfwehhhhh" "hofiewjoiwef"]
+                        ["pafoewijfewoijfwehhhhh" "hofijoiwef"]],
+      :deleted-props [["pak" "hofiewjoiwef"] ["pak" "hofijoiwef"]]}
      (shape-batch--vector
        schema/test-schema
        {}
@@ -94,7 +94,7 @@
            [?user :user/email ?email]]}})))
 
 (assert
-  (= {:crux.dataflow/added
+  (= {:updated-props
       {#crux/id":ids/pat"
        {:crux.db/id #crux/id":ids/pat"
         :user/name "pafoewijfewoijfwehhhhh"
@@ -103,7 +103,7 @@
        {:crux.db/id #crux/id":ids/mat"
         :user/name "pafoewijfewoijfwehhhhh"
         :user/email "hofijoiwef"}}
-      :crux.dataflow/deleted
+      :deleted-props
       {#crux/id":ids/mat"
        {:crux.db/id #crux/id":ids/mat"
         :user/name "pak"

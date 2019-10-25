@@ -10,8 +10,10 @@
     [crux-dataflow.df-relay :as df-consumer]
     [crux-dataflow.misc-helpers :as fm]
     [crux-dataflow.df-upload :as ingest]
-    [crux-dataflow.query-analysis :as qa])
-  (:import [java.util.concurrent LinkedBlockingQueue BlockingQueue]))
+    [crux-dataflow.query-analysis :as qa]
+    [clojure.spec.alpha :as s])
+  (:import [java.util.concurrent LinkedBlockingQueue BlockingQueue]
+           (java.io Closeable)))
 
 
 (def ^:private query->name (atom {}))
@@ -38,17 +40,32 @@
   (let [results (query-entities crux-node query)]
     (ingest/submit-crux-query-results df-listener results)))
 
+(s/def :crux.dataflow/results-shape
+  #{:crux.dataflow.results-shape/raw
+    :crux.dataflow.results-shape/maps
+    :crux.dataflow.results-shape/tuples})
+
+(s/def :crux.dataflow/subscription-options
+  (s/keys :req [:crux.dataflow/sub-id
+                :crux.dataflow/query]
+          :opt [:crux.dataflow/query-name
+                :crux.dataflow/results-shape]))
+
 
 ; ----- API -----
 (defn subscribe-query!
   ^BlockingQueue
   [{:keys [conn schema flat-schema] :as df-listener}
-   {:crux.dataflow/keys [sub-id query query-name] :as opts}]
+   {:crux.dataflow/keys [sub-id query query-name results-shape] :as opts}]
+  (s/assert :crux.dataflow/subscription-options opts)
   (let [query--prepared (schema/prepare-query flat-schema query)
         opts (assoc opts :crux.dataflow/query-analysis (qa/analyse-query query--prepared))
         query-name (or query-name (map-query-to-id! query--prepared))
         queue (LinkedBlockingQueue.)
-        listener (res-process/mk-listener--shaping flat-schema schema query-name queue opts)]
+        listener
+        (if (= :crux.dataflow.results-shape/raw results-shape)
+          (res-process/mk-listener--raw query-name queue)
+          (res-process/mk-listener--shaping flat-schema schema query-name queue opts))]
     (transact-data-for-query! df-listener query)
     (submit-query! df-listener query-name query--prepared)
     (df/listen-query! conn query-name sub-id listener)
@@ -57,5 +74,6 @@
 (defn unsubscribe-query! [{:keys [conn] :as dataflow-tx-listener} query-name]
   (df/unlisten-query! conn query-name query-name))
 
-(def start-dataflow-tx-listener df-consumer/start-dataflow-tx-listener)
+(defn ^Closeable start-dataflow-tx-listener [node opts]
+  (df-consumer/start-dataflow-tx-listener node opts))
 

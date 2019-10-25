@@ -54,7 +54,6 @@
       (Thread. payload)
       (.setName (str "crux-dataflow.tx-consumer-thread-" (swap! wc-counter inc))))))
 
-
 (defrecord CruxDataflowTxListener
   [conn df-db crux-node
    schema  ; map with per-entity sub-schemas
@@ -91,14 +90,13 @@
   [crux-node
    {:crux.dataflow/keys
         [schema ; map with per entity sub-schemas
-         restart-on-death?
+         restart-on-death? ; if worker thread should restart after exceptions
          url debug-connection? embed-server?]
     :or {url               srv-conn/default-dataflow-server-url
          restart-on-death? true
          debug-connection? false
          embed-server?     false}
     :as options}]
-
   (s/assert :crux.dataflow/tx-listener-options options)
   (let [server-process (when embed-server?
                          (srv-conn/start-dataflow-server))

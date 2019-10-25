@@ -53,7 +53,7 @@
   (dataflow/subscribe-query! crux-3df
     {:crux.dataflow/sub-id ::one
      :crux.dataflow/query-name "user-email"
-     :crux.df/results-shape :crux.dataflow.results-shape/tuples
+     :crux.dataflow/results-shape :crux.dataflow.results-shape/tuples
      :crux.dataflow/query
      {:find ['?name '?email]
       :where
@@ -72,18 +72,27 @@
       [['?user :user/name '?name]
        ['?user :user/email '?email]]}}))
 
+(def ^LinkedBlockingQueue sub3
+  (dataflow/subscribe-query! crux-3df
+    {:crux.dataflow/sub-id ::four
+     :crux.dataflow/query-name "user-with-eid-3"
+     :crux.dataflow/results-shape :crux.dataflow.results-shape/raw
+     :crux.dataflow/results-root-symbol '?user
+     :crux.dataflow/query
+     {:find ['?user '?name '?email]
+      :where
+      [['?user :user/name '?name]
+       ['?user :user/email '?email]]}}))
 
 (submit-sync
   [[:crux.tx/put
     {:crux.db/id :ids/patrik
-     :user/name  "Pat10"
-     :user/email "pat@pat.pat10"}]])
+     :user/name  "Pat3"
+     :user/email "pat@pat.pat3"}]])
 
-
-(.poll sub1 10 TimeUnit/MILLISECONDS)
+(.poll sub3 10 TimeUnit/MILLISECONDS)
 (.poll sub2 10 TimeUnit/MILLISECONDS)
-
-
+(.poll sub1 10 TimeUnit/MILLISECONDS)
 
 (assert
   (= '{:find [?name ?email ?user-todo],
