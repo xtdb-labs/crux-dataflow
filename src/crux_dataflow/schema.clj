@@ -110,7 +110,7 @@
       (encode-id v))
     v))
 
-(defn- maybe-decode-id [v]
+(defn maybe-decode-id [v]
   (if (string? v)
     (try
       (c/read-edn-string-with-readers v)

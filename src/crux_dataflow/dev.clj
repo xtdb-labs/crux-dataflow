@@ -48,11 +48,12 @@
        :crux.dataflow/debug-connection? true
        :crux.dataflow/embed-server?     false})))
 
+
 (def ^LinkedBlockingQueue sub1
   (dataflow/subscribe-query! crux-3df
     {:crux.dataflow/sub-id ::one
      :crux.dataflow/query-name "user-email"
-     :crux.df/results-shape :crux.df.results-shape/tuples
+     :crux.df/results-shape :crux.dataflow.results-shape/tuples
      :crux.dataflow/query
      {:find ['?name '?email]
       :where
@@ -61,29 +62,28 @@
 
 (def ^LinkedBlockingQueue sub2
   (dataflow/subscribe-query! crux-3df
-    {:crux.dataflow/sub-id ::two
-     :crux.dataflow/query-name "user-todos"
+    {:crux.dataflow/sub-id ::three
+     :crux.dataflow/query-name "user-with-eid"
      :crux.dataflow/results-shape :crux.dataflow.results-shape/maps
+     :crux.dataflow/results-root-symbol '?user
      :crux.dataflow/query
-     {:find ['?name '?email '?user-todo]
+     {:find ['?user '?name '?email]
       :where
       [['?user :user/name '?name]
-       ['?user :user/email '?email]
-       ['?task :task/owner '?user]
-       ['?task :task/title '?user-todo]]}}))
+       ['?user :user/email '?email]]}}))
+
 
 (submit-sync
   [[:crux.tx/put
     {:crux.db/id :ids/patrik
-     :user/name  "Pat"
-     :user/email "pat@pat.pat7"}]
-   [:crux.tx/put
-    {:crux.db/id :ids.tasks/one
-     :task/owner :ids/patrik
-     :task/title "Groceries 7"}]])
+     :user/name  "Pat10"
+     :user/email "pat@pat.pat10"}]])
+
 
 (.poll sub1 10 TimeUnit/MILLISECONDS)
 (.poll sub2 10 TimeUnit/MILLISECONDS)
+
+
 
 (assert
   (= '{:find [?name ?email ?user-todo],
@@ -100,6 +100,7 @@
          ['?user :user/email '?email]
          ['?task :task/owner  :ids/patrik]
          ['?task :task/title '?user-todo]]})))
+
 
 
 (comment
