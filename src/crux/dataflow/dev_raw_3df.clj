@@ -1,4 +1,4 @@
-(ns crux-dataflow.dev-raw-3df
+(ns crux.dataflow.dev-raw-3df
   (:require [clj-3df.core :as df]))
 
 (df/exec!

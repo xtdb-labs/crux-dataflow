@@ -1,4 +1,4 @@
-(ns crux-dataflow.server-connect
+(ns crux.dataflow.server-connect
   "Manage dataflow server connection or start one from a bundled resource"
   (:require [clojure.string :as str]
             [clojure.java.io :as io]

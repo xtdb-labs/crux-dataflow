@@ -1,4 +1,4 @@
-(ns crux-dataflow.crux-helpers
+(ns crux.dataflow.crux-helpers
   (:require [crux.api :as api]))
 
 

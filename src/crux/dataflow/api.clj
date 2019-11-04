@@ -1,4 +1,4 @@
-(ns crux-dataflow.api
+(ns crux.dataflow.api
   (:require
    [clojure.spec.alpha :as s]
    [clojure.tools.logging :as log]

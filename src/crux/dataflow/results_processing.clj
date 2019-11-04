@@ -1,9 +1,9 @@
-(ns crux-dataflow.results-processing
+(ns crux.dataflow.results-processing
   (:require [clojure.tools.logging :as log]
             [clj-3df.encode :as dfe]
-            [crux-dataflow.misc-helpers :as fm]
-            [crux-dataflow.schema :as schema]
-            [crux-dataflow.query-analysis :as qa]))
+            [crux.dataflow.misc-helpers :as fm]
+            [crux.dataflow.schema :as schema]
+            [crux.dataflow.query-analysis :as qa]))
 
 (defn- df-triplet-type [[_ _ ^Long cardinality-delta :as df-diff-tuple]]
   (if (> cardinality-delta 0)

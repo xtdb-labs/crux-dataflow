@@ -1,7 +1,7 @@
-(ns crux-dataflow.query-analysis
+(ns crux.dataflow.query-analysis
   "Mostly copied from crux-console, perhaps a unified query-analysis.cljc
   could be a better answer facilitating growth."
-  (:require [crux-dataflow.misc-helpers :as fm]
+  (:require [crux.dataflow.misc-helpers :as fm]
             [clojure.set :as cset]
             [clojure.tools.reader.edn :as reader]
             [crux.query :as q])

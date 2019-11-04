@@ -1,4 +1,4 @@
-(ns crux-dataflow.misc-helpers
+(ns crux.dataflow.misc-helpers
   (:require [clojure.pprint :as pp])
   (:import (java.util UUID Map)
            (clojure.lang ITransientAssociative)))

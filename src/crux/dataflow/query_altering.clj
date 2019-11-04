@@ -1,5 +1,5 @@
-(ns crux-dataflow.query-altering
-  (:require [crux-dataflow.query-analysis :as qa])
+(ns crux.dataflow.query-altering
+  (:require [crux.dataflow.query-analysis :as qa])
   (:import (clojure.lang IPersistentMap)))
 
 (defn entities-grabbing-alteration [^IPersistentMap query]

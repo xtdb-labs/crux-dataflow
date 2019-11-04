@@ -1,9 +1,9 @@
-(ns crux-dataflow.df-upload
+(ns crux.dataflow.df-upload
   "Means to submit tx-log entries and Crux docs"
   (:require [clojure.tools.logging :as log]
             [crux.api :as api]
             [clojure.test]
-            [crux-dataflow.schema :as schema]
+            [crux.dataflow.schema :as schema]
             [clj-3df.core :as df]))
 
 (defn- calc-changed-triplets [eid-3df flat-schema old-doc new-doc]

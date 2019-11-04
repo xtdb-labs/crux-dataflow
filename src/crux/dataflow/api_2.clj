@@ -1,16 +1,16 @@
-(ns crux-dataflow.api-2
+(ns crux.dataflow.api-2
   (:require
     [clojure.tools.logging :as log]
     [clj-3df.core :as df]
     [manifold.stream]
     [crux.api :as api]
-    [crux-dataflow.results-processing :as res-process]
-    [crux-dataflow.query-altering :as q-alt]
-    [crux-dataflow.schema :as schema]
-    [crux-dataflow.df-relay :as df-consumer]
-    [crux-dataflow.misc-helpers :as fm]
-    [crux-dataflow.df-upload :as ingest]
-    [crux-dataflow.query-analysis :as qa]
+    [crux.dataflow.results-processing :as res-process]
+    [crux.dataflow.query-altering :as q-alt]
+    [crux.dataflow.schema :as schema]
+    [crux.dataflow.df-relay :as df-consumer]
+    [crux.dataflow.misc-helpers :as fm]
+    [crux.dataflow.df-upload :as ingest]
+    [crux.dataflow.query-analysis :as qa]
     [clojure.spec.alpha :as s])
   (:import [java.util.concurrent LinkedBlockingQueue BlockingQueue]
            (java.io Closeable)))

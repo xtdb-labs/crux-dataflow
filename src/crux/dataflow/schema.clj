@@ -1,9 +1,9 @@
-(ns crux-dataflow.schema
+(ns crux.dataflow.schema
   (:require [clojure.tools.logging :as log]
             [crux.codec :as c]
             [clojure.walk :as w]
             [crux.query :as q]
-            [crux-dataflow.misc-helpers :as fm]
+            [crux.dataflow.misc-helpers :as fm]
             [clj-3df.attribute :as attribute])
   (:import (java.util Date)))
 
@@ -214,7 +214,7 @@
                    :index_direction "Both",
                    :input_semantics "CardinalityOne",
                    :trace_slack {:TxId 1}},
-            :knows {:crux-dataflow.schema/collection-type :crux-dataflow.schema/set,
+            :knows {:crux.dataflow.schema/collection-type :crux.dataflow.schema/set,
                     :db/valueType :Eid,
                     :query_support "AdaptiveWCO",
                     :index_direction "Both",

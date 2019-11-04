@@ -1,9 +1,9 @@
-(ns crux-dataflow.dev
+(ns crux.dataflow.dev
   (:require
     [crux.api :as api]
-    [crux-dataflow.api-2 :as dataflow]
+    [crux.dataflow.api-2 :as dataflow]
     [clojure.pprint :as pp]
-    [crux-dataflow.schema :as schema])
+    [crux.dataflow.schema :as schema])
   (:import (java.util.concurrent LinkedBlockingQueue TimeUnit)
            (java.io Closeable)
            (java.time Duration)))
@@ -46,7 +46,7 @@
       node
       {:crux.dataflow/schema full-schema
        :crux.dataflow/debug-connection? true
-       :crux.dataflow/embed-server?     false})))
+       :crux.dataflow/embed-server?     true})))
 
 
 (def ^LinkedBlockingQueue sub1

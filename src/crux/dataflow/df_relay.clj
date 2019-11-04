@@ -1,12 +1,12 @@
-(ns crux-dataflow.df-relay
+(ns crux.dataflow.df-relay
   "Consumes Crux tx-log, relays entries into Declarative Dataflow server"
   (:require [clojure.tools.logging :as log]
-            [crux-dataflow.crux-helpers :as f]
-            [crux-dataflow.df-upload :as ingest]
-            [crux-dataflow.schema :as schema]
+            [crux.dataflow.crux-helpers :as f]
+            [crux.dataflow.df-upload :as ingest]
+            [crux.dataflow.schema :as schema]
             [crux.api :as api]
             [clojure.spec.alpha :as s]
-            [crux-dataflow.server-connect :as srv-conn]
+            [crux.dataflow.server-connect :as srv-conn]
             [clj-3df.core :as df])
   (:import (java.lang Thread)
            (clojure.lang Atom)
@@ -52,7 +52,7 @@
               (log/info "Dataflow consumer thread exiting"))))]
     (doto
       (Thread. payload)
-      (.setName (str "crux-dataflow.tx-consumer-thread-" (swap! wc-counter inc))))))
+      (.setName (str "crux.dataflow.tx-consumer-thread-" (swap! wc-counter inc))))))
 
 (defrecord CruxDataflowTxListener
   [conn df-db crux-node
