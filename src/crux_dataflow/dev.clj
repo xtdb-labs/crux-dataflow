@@ -87,12 +87,13 @@
 (submit-sync
   [[:crux.tx/put
     {:crux.db/id :ids/patrik
-     :user/name  "Pat3"
-     :user/email "pat@pat.pat3"}]])
+     :user/name  "Pat23"
+     :user/email "pat@t.pat23"}]])
 
 (.poll sub3 10 TimeUnit/MILLISECONDS)
 (.poll sub2 10 TimeUnit/MILLISECONDS)
 (.poll sub1 10 TimeUnit/MILLISECONDS)
+
 
 (assert
   (= '{:find [?name ?email ?user-todo],
